@@ -1,3 +1,0 @@
-[deploy]
-# SIGTERM 후 SIGKILL 전 대기 시간 (초) — 진행 중인 회고 자동화 완료 보장
-stopSignalTimeout = 60
