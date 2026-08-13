@@ -1,15 +1,12 @@
 {
-  "name": "newrrow-reflection-bot",
+  "name": "daymark-cli",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node cli.js"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
-    "discord.js": "^14.16.0",
     "dotenv": "^16.0.0",
-    "p-queue": "^8.0.1",
     "playwright": "^1.44.0"
   }
 }
