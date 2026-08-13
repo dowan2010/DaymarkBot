@@ -1,0 +1,7 @@
+node_modules
+session_*.json
+users.json
+*.png
+*.html
+*_files
+.env

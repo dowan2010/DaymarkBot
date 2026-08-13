@@ -1,0 +1,14 @@
+node_modules
+session_*.json
+*.png
+*.html
+*_files
+CLAUDE.md
+.env
+users.json
+keys.json
+last_commit.txt
+test_*.js
+newrrow-chat.js
+.DS_Store
+.idea
