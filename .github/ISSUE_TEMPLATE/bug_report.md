@@ -7,6 +7,7 @@ assignees: ''
 ---
 
 ### 등록 전 확인
+- [ ] `git pull origin main` 으로 최신 버전인지 확인함
 - [ ] `node -v` 가 v20 이상인지 확인함
 - [ ] `npm install` 다시 실행해봄
 - [ ] `npx playwright install chromium` 실행함

@@ -43,5 +43,6 @@ node cli.js
 
 ## 문제 발생 시
 
-먼저 `node -v`로 Node 버전이 맞는지 확인하고, `npm install` / `npx playwright install chromium`을 다시 실행해보세요.
+먼저 `git pull origin main`으로 최신 버전인지 확인하고, `node -v`로 Node 버전이 맞는지 확인하세요.
+그 다음 `npm install` / `npx playwright install chromium`을 다시 실행해보세요.
 그래도 안 되면 [Issues](https://github.com/dowan2010/newrrowBot/issues)에 등록해주세요.
