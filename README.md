@@ -40,3 +40,8 @@ node cli.js
 
 - 브라우저 창을 띄워서 보고 싶으면 `.env`에 `HEADLESS=false` 설정
 - MIT License
+
+## 문제 발생 시
+
+먼저 `node -v`로 Node 버전이 맞는지 확인하고, `npm install` / `npx playwright install chromium`을 다시 실행해보세요.
+그래도 안 되면 [Issues](https://github.com/dowan2010/newrrowBot/issues)에 등록해주세요.
