@@ -1,24 +1,41 @@
-// Daymark CLI — 뉴로우 회고 자동화 (Discord 없이 터미널에서 직접 실행)
+// auto-newrrow CLI — 뉴로우 회고 자동화 (터미널에서 직접 실행)
 // 실행: node cli.js
-// .env 필요: GEMINI_API_KEY, EMAIL, PASSWORD
+// 최초 실행 시 "설정" 메뉴에서 GEMINI_API_KEY / EMAIL / PASSWORD 입력하면 .env에 저장됨
 import 'dotenv/config';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { createInterface } from 'readline/promises';
 import { submitReflection, resetReflection, getTasksWithToken, browserCreateTask, browserCreateSchedule } from './automation.js';
 import { addSubmissionHistory, removeSubmissionHistory, addRecentTopic, getRecentTopics } from './lib/data.js';
 import { generateTopic, generateReflection, generateWithRetry } from './lib/ai.js';
 
-const EMAIL = process.env.EMAIL || process.env.TEST_EMAIL;
-const PASSWORD = process.env.PASSWORD || process.env.TEST_PASSWORD;
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ENV_PATH = join(__dirname, '.env');
 
-function requireEnv() {
+let EMAIL = process.env.EMAIL || process.env.TEST_EMAIL;
+let PASSWORD = process.env.PASSWORD || process.env.TEST_PASSWORD;
+
+function upsertEnvValue(key, value) {
+  const lines = existsSync(ENV_PATH) ? readFileSync(ENV_PATH, 'utf-8').split('\n') : [];
+  const idx = lines.findIndex(l => l.startsWith(`${key}=`));
+  const line = `${key}=${value}`;
+  if (idx >= 0) lines[idx] = line;
+  else lines.push(line);
+  writeFileSync(ENV_PATH, lines.filter((l, i) => l !== '' || i === lines.length - 1).join('\n'));
+  process.env[key] = value;
+}
+
+function mask(v) {
+  return v ? `${v.slice(0, 4)}${'*'.repeat(Math.max(v.length - 4, 0))}` : '(설정 안 됨)';
+}
+
+function ensureCreds({ gemini = true, account = true } = {}) {
   const missing = [];
-  if (!process.env.GEMINI_API_KEY) missing.push('GEMINI_API_KEY');
-  if (!EMAIL) missing.push('EMAIL');
-  if (!PASSWORD) missing.push('PASSWORD');
-  if (missing.length) {
-    console.error(`❌ .env에 다음 값이 없음: ${missing.join(', ')}`);
-    process.exit(1);
-  }
+  if (gemini && !process.env.GEMINI_API_KEY) missing.push('GEMINI_API_KEY');
+  if (account && !EMAIL) missing.push('EMAIL');
+  if (account && !PASSWORD) missing.push('PASSWORD');
+  if (missing.length) throw new Error(`설정 안 됨: ${missing.join(', ')} — "설정" 메뉴에서 먼저 입력해줘`);
 }
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -28,7 +45,26 @@ function todayKST() {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0];
 }
 
+async function doSettings() {
+  console.log('\n엔터 = 기존 값 유지\n');
+
+  console.log(`GEMINI_API_KEY 현재: ${mask(process.env.GEMINI_API_KEY)}`);
+  const gemini = (await ask('새 GEMINI_API_KEY: ')).trim();
+  if (gemini) upsertEnvValue('GEMINI_API_KEY', gemini);
+
+  console.log(`\nEMAIL 현재: ${mask(EMAIL)}`);
+  const email = (await ask('새 뉴로우 EMAIL: ')).trim();
+  if (email) { upsertEnvValue('EMAIL', email); EMAIL = email; }
+
+  console.log(`\nPASSWORD 현재: ${mask(PASSWORD)}`);
+  const password = (await ask('새 뉴로우 PASSWORD: ')).trim();
+  if (password) { upsertEnvValue('PASSWORD', password); PASSWORD = password; }
+
+  console.log('\n✅ 저장 완료 (.env)');
+}
+
 async function doReflect() {
+  ensureCreds();
   const dateInput = (await ask('날짜 (엔터=오늘, YYYY-MM-DD): ')).trim();
   const date = dateInput || null;
 
@@ -55,6 +91,7 @@ async function doReflect() {
 }
 
 async function doReset() {
+  ensureCreds({ gemini: false });
   const dateInput = (await ask('초기화할 날짜 (엔터=오늘): ')).trim();
   const dateLabel = dateInput || todayKST();
   const result = await resetReflection(EMAIL, PASSWORD, dateLabel);
@@ -63,12 +100,14 @@ async function doReset() {
 }
 
 async function doTasks() {
+  ensureCreds({ gemini: false });
   const { tasks } = await getTasksWithToken(EMAIL, PASSWORD);
   if (!tasks.length) { console.log('할일 없음'); return; }
   tasks.forEach((t, i) => console.log(`${i + 1}. [id=${t.id ?? t.taskId}] ${t.title ?? t.taskTitle ?? t.name}`));
 }
 
 async function doTaskAdd() {
+  ensureCreds({ gemini: false });
   const title = (await ask('할일 제목: ')).trim();
   if (!title) { console.log('취소됨'); return; }
   const { status, taskId } = await browserCreateTask(EMAIL, PASSWORD, title);
@@ -76,6 +115,7 @@ async function doTaskAdd() {
 }
 
 async function doSchedule() {
+  ensureCreds({ gemini: false });
   const taskId = (await ask('taskId: ')).trim();
   const startISO = (await ask('시작 (YYYY-MM-DDTHH:mm:00): ')).trim();
   const endISO = (await ask('종료 (YYYY-MM-DDTHH:mm:00): ')).trim();
@@ -85,6 +125,7 @@ async function doSchedule() {
 }
 
 async function doTopics() {
+  ensureCreds({ account: false });
   const result = await generateWithRetry(
     '개발을 막 배우기 시작한 고등학생의 전공 학습을 주제로 뉴로우 회고에 쓸 만한 구체적인 주제 3개를 추천해줘.\n' +
     '번호 없이 한 줄씩, 25자 이내, 한국어만',
@@ -100,11 +141,11 @@ const MENU = [
   { label: '할일 추가', run: doTaskAdd },
   { label: '일정 등록', run: doSchedule },
   { label: '주제 추천만 보기', run: doTopics },
+  { label: '설정 (API 키 / 계정)', run: doSettings },
 ];
 
 async function main() {
-  requireEnv();
-  console.log('📓 Daymark CLI\n');
+  console.log('📓 auto-newrrow CLI\n');
   while (true) {
     console.log('');
     MENU.forEach((m, i) => console.log(`${i + 1}. ${m.label}`));
