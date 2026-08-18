@@ -202,10 +202,16 @@ const INNER_WIDTH = WIDTH - 6; // 바깥 여백 2칸씩 + 안쪽 박스 테두�
 
 // 카드 상단(타이틀 + 전체 메뉴 목록)까지 그리고, 입력 박스는 열어둔 채로 반환
 // (입력 박스 안에서 바로 readline으로 받기 위해 박스를 닫지 않음)
+const CARD_HEIGHT = 22; // printMenuTop(17줄) + printMenuBottom(5줄)
+
 function printMenuTop() {
   fillScreen();
   const line = '─'.repeat(WIDTH + 2);
   const p = (cardLine) => screenCenter(cardLine, CARD_WIDTH);
+
+  const rows = process.stdout.rows || 24;
+  const vPad = Math.max(Math.floor((rows - CARD_HEIGHT) / 2), 0);
+  for (let i = 0; i < vPad; i++) screenCenter('', 0);
 
   if (!TTY) console.log('');
   p(`${C.dim}┌${line}┐${C.reset}`);
