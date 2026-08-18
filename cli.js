@@ -140,8 +140,8 @@ function center(plainText, coloredText, width) {
 
 function fillScreen() {
   if (!TTY) return;
-  const term = process.stdout.columns || 80;
-  const rows = process.stdout.rows || 24;
+  const term = process.stdout.columns > 0 ? process.stdout.columns : 80;
+  const rows = process.stdout.rows > 0 ? process.stdout.rows : 24;
   let buf = '\x1b[2J\x1b[H';
   for (let i = 0; i < rows; i++) buf += `${BG}${' '.repeat(term)}${FULL_RESET}\n`;
   buf += '\x1b[H';
@@ -244,14 +244,21 @@ function inputCol() {
 
 // 터미널 창 크기가 바뀌면 현재 화면을 새 크기에 맞춰 다시 그림
 if (TTY) {
+  let resizeTimer = null;
   process.stdout.on('resize', () => {
-    if (!currentScreen) return;
-    const wasAtInput = cursorAtInput;
-    drawCard(currentScreen.contentLines, currentScreen.placeholder);
-    if (wasAtInput) {
-      process.stdout.write(`\x1b[${ROWS_BELOW_INPUT}A\x1b[${inputCol()}G`);
-      cursorAtInput = true;
-    }
+    clearTimeout(resizeTimer);
+    // 리사이즈 중 연달아 뜨는 이벤트 중 크기값이 순간적으로 이상하게 잡히는 경우가 있어
+    // 살짝 debounce 후 그림 (드래그 리사이즈 도중 깜빡임/부분렌더 방지)
+    resizeTimer = setTimeout(() => {
+      if (!currentScreen) return;
+      if ((process.stdout.columns || 0) < 20 || (process.stdout.rows || 0) < 10) return;
+      const wasAtInput = cursorAtInput;
+      drawCard(currentScreen.contentLines, currentScreen.placeholder);
+      if (wasAtInput) {
+        process.stdout.write(`\x1b[${ROWS_BELOW_INPUT}A\x1b[${inputCol()}G`);
+        cursorAtInput = true;
+      }
+    }, 80);
   });
 }
 
