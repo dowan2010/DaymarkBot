@@ -58,6 +58,8 @@ function todayKST() {
 }
 
 const TTY = process.stdout.isTTY && process.stdin.isTTY;
+// 대체 화면 버퍼(vim/htop 방식) — 마우스 스크롤로 이전 프레임(스크롤백) 못 보게 막음
+if (TTY) process.stdout.write('\x1b[?1049h');
 
 // TTY일 땐 raw keypress로만 입력받음(아래 readKey/readLine) — readline Interface는 아예 안 만듦.
 // createInterface()는 만들어두기만 해도 내부적으로 같은 stdin에 자기 keypress 리스너를
@@ -68,7 +70,7 @@ const ask = (q) => rl.question(q);
 if (TTY) emitKeypressEvents(process.stdin);
 
 function exitApp() {
-  if (TTY) process.stdout.write('\x1b[2J\x1b[H');
+  if (TTY) process.stdout.write('\x1b[?1049l'); // 대체 화면 버퍼 나가기 — 원래 화면(스크롤백)으로 복귀
   console.log('👋 종료함');
   process.exit(0);
 }
@@ -182,9 +184,35 @@ const BIG_FONT = {
   '-': ['     ', '     ', '█████', '     ', '     '],
   ' ': ['  ', '  ', '  ', '  ', '  '],
 };
-function bigText(str) {
+// 그림자 있는 버전 — 오른쪽 아래로 1칸 밀린 흐린 사본 위에 밝은 원본을 겹쳐 그림
+function bigTextWithShadow(str) {
   const glyphs = [...str.toUpperCase()].map(ch => BIG_FONT[ch] ?? BIG_FONT[' ']);
-  return Array.from({ length: 5 }, (_, row) => glyphs.map(g => g[row]).join(' '));
+  const mainWidth = glyphs.reduce((sum, g, i) => sum + g[0].length + (i > 0 ? 1 : 0), 0);
+  const H = 5 + 1, W = mainWidth + 1;
+  const grid = Array.from({ length: H }, () => Array.from({ length: W }, () => null));
+
+  const stamp = (rowOff, colOff, bright) => {
+    let col = colOff;
+    glyphs.forEach((g) => {
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < g[r].length; c++) {
+          if (g[r][c] !== ' ') grid[rowOff + r][col + c] = bright;
+        }
+      }
+      col += g[0].length + 1;
+    });
+  };
+  stamp(1, 1, false); // 그림자 (아래+오른쪽 1칸)
+  stamp(0, 0, true);  // 원본 (그 위에 덮어그림)
+
+  const plain = ' '.repeat(W);
+  return grid.map(rowArr => ({
+    plain,
+    colored: rowArr.map(cell => {
+      if (cell === null) return ' ';
+      return cell ? `${C.bold}${C.orange}█${C.reset}` : `${C.dim}█${C.reset}`;
+    }).join(''),
+  }));
 }
 
 function center(plainText, coloredText, width) {
@@ -216,7 +244,7 @@ function screenCenter(coloredText, plainWidth) {
 let WIDTH = 50;
 let CARD_WIDTH = WIDTH + 4;
 let INNER_WIDTH = WIDTH - 6;
-const BANNER_MIN_WIDTH = 66; // 블록 배너("AUTO-NEWRROW")가 62칸 필요 — 카드 폭이 이보다 좁으면 안 됨
+const BANNER_MIN_WIDTH = 68; // 그림자 포함 블록 배너("AUTO-NEWRROW")가 63칸 필요 — 카드 폭이 이보다 좁으면 안 됨
 function recomputeLayout() {
   const cols = process.stdout.columns || 80;
   const target = Math.round(cols * 0.8);
@@ -259,7 +287,7 @@ function drawCard(contentLines, placeholder) {
   if (!TTY) console.log('');
   p(`${C.dim}┌${line}┐${C.reset}`);
   p(row('', '', WIDTH));
-  bigText('AUTO-NEWRROW').forEach(l => p(center(l, `${C.bold}${C.orange}${l}${C.reset}`, WIDTH)));
+  bigTextWithShadow('AUTO-NEWRROW').forEach(l => p(center(l.plain, l.colored, WIDTH)));
   p(row('', '', WIDTH));
 
   padContentRows(contentLines).forEach(l => p(row(l.plain, l.colored, WIDTH)));
@@ -281,11 +309,11 @@ function drawCard(contentLines, placeholder) {
 }
 
 // drawCard가 그리는 줄 순서(0-index, vPad 이후 기준):
-// 0 상단테두리 1 공백 2..6 배너(5줄) 7 공백 8..(8+CONTENT_ROWS-1) 내용 (+1) 공백
+// 0 상단테두리 1 공백 2..7 배너+그림자(6줄) 8 공백 9..(9+CONTENT_ROWS-1) 내용 (+1) 공백
 // (+1) 입력박스상단 (+1) 입력줄 (+1) 입력박스하단 (+1) 공백 (+1) 구분선 (+1) 팁 (+1) 하단테두리
 // drawCard 종료 직후(마지막 console.log의 개행 포함) 커서는 CARD_HEIGHT번째 줄에 있음
 // CONTENT_ROWS를 바꿔도 아래 값들이 자동으로 맞춰짐
-const CONTENT_FIRST_INDEX = 8;
+const CONTENT_FIRST_INDEX = 9;
 const INPUT_ROW_INDEX = CONTENT_FIRST_INDEX + CONTENT_ROWS + 2;
 const CARD_HEIGHT = CONTENT_FIRST_INDEX + CONTENT_ROWS + 8;
 const RESTING_INDEX = CARD_HEIGHT;
@@ -561,13 +589,13 @@ async function main() {
 
 // 예상 못 한 에러로 죽을 때 화면 지우고 실제 에러 보여줌 (그냥 검게 멈춘 채 죽는 것 방지)
 process.on('uncaughtException', (err) => {
-  if (TTY) process.stdout.write('\x1b[2J\x1b[H\x1b[0m');
+  if (TTY) process.stdout.write('\x1b[?1049l\x1b[0m');
   console.error('❌ 예상 못 한 오류로 종료됨:\n');
   console.error(err.stack || err);
   process.exit(1);
 });
 process.on('unhandledRejection', (err) => {
-  if (TTY) process.stdout.write('\x1b[2J\x1b[H\x1b[0m');
+  if (TTY) process.stdout.write('\x1b[?1049l\x1b[0m');
   console.error('❌ 예상 못 한 오류로 종료됨:\n');
   console.error(err?.stack || err);
   process.exit(1);
