@@ -2,18 +2,22 @@
 // auto-newrrow CLI — 뉴로우 회고 자동화 (터미널에서 직접 실행)
 // 실행: node cli.js
 // 최초 실행 시 "설정" 메뉴에서 GEMINI_API_KEY / EMAIL / PASSWORD 입력하면 .env에 저장됨
-import 'dotenv/config';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { config as loadEnv } from 'dotenv';
 import { createInterface } from 'readline/promises';
 import { emitKeypressEvents } from 'readline';
-import { submitReflection, resetReflection, getTasksWithToken, browserCreateTask, browserCreateSchedule } from './automation.js';
-import { addSubmissionHistory, removeSubmissionHistory, addRecentTopic, getRecentTopics } from './lib/data.js';
-import { generateTopic, generateReflection, generateWithRetry } from './lib/ai.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = join(__dirname, '.env');
+// newrrow는 전역 명령어라 어느 디렉토리에서 실행될지 모름 — cwd 기준이 아니라
+// 항상 이 스크립트가 있는 폴더의 .env를 명시적으로 읽음
+loadEnv({ path: ENV_PATH });
+
+import { submitReflection, resetReflection, getTasksWithToken, browserCreateTask, browserCreateSchedule } from './automation.js';
+import { addSubmissionHistory, removeSubmissionHistory, addRecentTopic, getRecentTopics } from './lib/data.js';
+import { generateTopic, generateReflection, generateWithRetry } from './lib/ai.js';
 
 let EMAIL = process.env.EMAIL || process.env.TEST_EMAIL;
 let PASSWORD = process.env.PASSWORD || process.env.TEST_PASSWORD;
