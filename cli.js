@@ -87,7 +87,7 @@ function readLine() {
         resolve(buf.trim());
         return;
       }
-      if (key?.name === 'backspace' || str === '\x7f' || str === '\b') {
+      if (key?.name === 'backspace' || key?.name === 'delete' || str === '\x7f' || str === '\b') {
         if (buf.length > 0) {
           const last = buf[buf.length - 1];
           buf = buf.slice(0, -1);
@@ -96,6 +96,8 @@ function readLine() {
         }
         return;
       }
+      // 방향키/esc/tab 등 이름 있는 특수키는 무시 (조각난 이스케이프 시퀀스가 글자로 새는 것 방지)
+      if (key?.name && key.name.length > 1) return;
       if (str && !key?.ctrl && !key?.meta && str.charCodeAt(0) >= 0x20) {
         buf += str;
         process.stdout.write(str);
