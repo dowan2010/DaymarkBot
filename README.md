@@ -1,12 +1,13 @@
 # auto-newrrow
 
 뉴로우(dgsm.newrrow.com) 일일 회고를 터미널에서 자동으로 작성·제출하는 CLI.
+카드 형태 터미널 UI로 동작하며, 번호만 누르면 바로 실행됨(엔터 필요 없음).
 
 ## 설치
 
 ```bash
-git clone https://github.com/dowan2010/DaymarkBot.git
-cd DaymarkBot
+git clone https://github.com/dowan2010/newrrowBot.git
+cd newrrowBot
 npm install
 npx playwright install chromium
 ```
@@ -44,10 +45,11 @@ newrrow
 | 5 | 일정 등록 |
 | 6 | 주제 추천만 보기 |
 | 7 | 설정 (API 키 / 계정) |
+| 0 | 종료 |
 
 ## 참고
 
-- 브라우저 창을 띄워서 보고 싶으면 `.env`에 `HEADLESS=false` 설정
+- 브라우저 창을 띄워서 보고 싶으면 설정(7) 메뉴에서 바로 켜고 끌 수 있음 (`.env`의 `HEADLESS`)
 - MIT License
 
 ## 문제 발생 시
