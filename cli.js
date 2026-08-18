@@ -155,26 +155,42 @@ function screenCenter(coloredText, plainWidth) {
   console.log(screenLine(coloredText, plainWidth));
 }
 
-const WIDTH = 50;
-const CARD_WIDTH = WIDTH + 4;
-const INNER_WIDTH = WIDTH - 6; // 바깥 여백 2칸씩 + 안쪽 박스 테두리 2칸
+// 화면 폭에 비례해서 카드 크기를 정함 (작은 터미널=최소 크기, 큰 터미널=비례해서 커짐)
+let WIDTH = 50;
+let CARD_WIDTH = WIDTH + 4;
+let INNER_WIDTH = WIDTH - 6;
+function recomputeLayout() {
+  const cols = process.stdout.columns || 80;
+  const target = Math.round(cols * 0.55);
+  CARD_WIDTH = Math.max(54, Math.min(target, cols - 4, 100));
+  WIDTH = CARD_WIDTH - 4;
+  INNER_WIDTH = WIDTH - 6; // 바깥 여백 2칸씩 + 안쪽 박스 테두리 2칸
+}
+
 const CONTENT_ROWS = 8; // 카드 내용 영역 줄 수 — 모든 화면이 이 높이로 고정돼야 커서 이동 계산이 일정함
 
+// 내용 줄은 폭이 고정되기 전(WIDTH 미확정) 시점에 만들어질 수 있어서, 실제 패딩은
+// drawCard가 그릴 때(WIDTH 확정 후) 적용함 — {plain, colored} 형태로만 들고 있음
 function padContentRows(lines) {
   const out = lines.slice(0, CONTENT_ROWS);
-  while (out.length < CONTENT_ROWS) out.push(row('', '', WIDTH));
+  while (out.length < CONTENT_ROWS) out.push({ plain: '', colored: '' });
   return out;
 }
 function contentRow(plainText, coloredText) {
-  return row(`  ${plainText}`, `  ${coloredText}`, WIDTH);
+  return { plain: `  ${plainText}`, colored: `  ${coloredText}` };
 }
 function blankContentRow() {
-  return row('', '', WIDTH);
+  return { plain: '', colored: '' };
 }
 
 // 카드 전체 그리기: contentLines(최대 CONTENT_ROWS줄) + 입력/상태 박스(placeholder)
 // 구조가 항상 동일해야 ROWS_BELOW_INPUT / CONTENT_TOP_OFFSET 같은 상대 커서 이동이 맞음
+let currentScreen = null;
+let cursorAtInput = false;
 function drawCard(contentLines, placeholder) {
+  currentScreen = { contentLines, placeholder };
+  cursorAtInput = false;
+  recomputeLayout();
   fillScreen();
   const line = '─'.repeat(WIDTH + 2);
   const p = (cardLine) => screenCenter(cardLine, CARD_WIDTH);
@@ -189,7 +205,7 @@ function drawCard(contentLines, placeholder) {
   p(center('AUTO-NEWRROW CLI', `${C.bold}${C.orange}AUTO-NEWRROW${C.reset} ${C.bold}${C.light}CLI${C.reset}`, WIDTH));
   p(row('', '', WIDTH));
 
-  padContentRows(contentLines).forEach(l => p(l));
+  padContentRows(contentLines).forEach(l => p(row(l.plain, l.colored, WIDTH)));
   p(row('', '', WIDTH));
 
   const innerLine = '─'.repeat(INNER_WIDTH + 2);
@@ -224,13 +240,26 @@ function inputCol() {
   return leftPad + 2 /* │+space */ + 2 /* 들여쓰기 */ + 2 /* ┃+space */ + 1;
 }
 
+// 터미널 창 크기가 바뀌면 현재 화면을 새 크기에 맞춰 다시 그림
+if (TTY) {
+  process.stdout.on('resize', () => {
+    if (!currentScreen) return;
+    const wasAtInput = cursorAtInput;
+    drawCard(currentScreen.contentLines, currentScreen.placeholder);
+    if (wasAtInput) {
+      process.stdout.write(`\x1b[${ROWS_BELOW_INPUT}A\x1b[${inputCol()}G`);
+      cursorAtInput = true;
+    }
+  });
+}
+
 // 카드 내용 영역만 라이브 갱신 (자동화 진행 로그처럼 반복적으로 바뀌는 화면용)
 function updateContent(contentLines) {
   if (!TTY) return;
   const padded = padContentRows(contentLines);
   process.stdout.write(`\x1b[${CONTENT_TOP_OFFSET}A`);
   padded.forEach((l, i) => {
-    process.stdout.write(`\r${screenLine(l, CARD_WIDTH)}\x1b[K`);
+    process.stdout.write(`\r${screenLine(row(l.plain, l.colored, WIDTH), CARD_WIDTH)}\x1b[K`);
     if (i < padded.length - 1) process.stdout.write('\n');
   });
   process.stdout.write(`\x1b[${CONTENT_TOP_OFFSET - (CONTENT_ROWS - 1)}B\r`);
@@ -239,8 +268,9 @@ function updateContent(contentLines) {
 // 카드 하단 입력박스로 커서를 옮겨 raw keypress로 번호 하나 받고, 그 자리에 선택 결과 표시
 async function cardChoice(contentLines, placeholder, validKeys) {
   drawCard(contentLines, placeholder);
-  if (TTY) process.stdout.write(`\x1b[${ROWS_BELOW_INPUT}A\x1b[${inputCol()}G`);
+  if (TTY) { process.stdout.write(`\x1b[${ROWS_BELOW_INPUT}A\x1b[${inputCol()}G`); cursorAtInput = true; }
   const choice = await readKey(validKeys);
+  cursorAtInput = false;
   if (TTY) {
     const confirmPad = ' '.repeat(Math.max(INNER_WIDTH - vwidth(choice), 0));
     process.stdout.write(`\x1b[${inputCol()}G${C.bold}${C.green}${choice}${C.reset}${confirmPad}`);
@@ -252,8 +282,9 @@ async function cardChoice(contentLines, placeholder, validKeys) {
 // 카드 하단 입력박스로 커서를 옮겨 일반 텍스트를 받음 (줄 편집 가능, Enter로 종료)
 async function cardAsk(contentLines, placeholder) {
   drawCard(contentLines, placeholder);
-  if (TTY) process.stdout.write(`\x1b[${ROWS_BELOW_INPUT}A\x1b[${inputCol()}G`);
+  if (TTY) { process.stdout.write(`\x1b[${ROWS_BELOW_INPUT}A\x1b[${inputCol()}G`); cursorAtInput = true; }
   const value = await readLine();
+  cursorAtInput = false;
   if (TTY) process.stdout.write(`\x1b[${ROWS_BELOW_INPUT - 1}B\r`); // Enter가 이미 개행 1줄 만듦
   return value;
 }
