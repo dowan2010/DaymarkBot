@@ -57,6 +57,12 @@ const rl = createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q) => rl.question(q);
 if (TTY) emitKeypressEvents(process.stdin);
 
+function exitApp() {
+  if (TTY) process.stdout.write('\x1b[2J\x1b[H');
+  console.log('👋 종료함');
+  process.exit(0);
+}
+
 // 단일 키 입력 (raw mode) — validKeys가 null이면 아무 키나 허용
 function readKey(validKeys) {
   if (!TTY) return ask('').then(s => s.trim());
@@ -64,7 +70,7 @@ function readKey(validKeys) {
     process.stdin.setRawMode(true);
     process.stdin.resume();
     const onKeypress = (str, key) => {
-      if (key?.ctrl && key.name === 'c') { cleanup(); process.exit(0); }
+      if (key?.ctrl && key.name === 'c') { cleanup(); exitApp(); }
       if (!str) return;
       if (validKeys === null || validKeys.includes(str)) { cleanup(); resolve(str); }
     };
@@ -84,7 +90,7 @@ function readLine() {
     process.stdin.setRawMode(true);
     process.stdin.resume();
     const onKeypress = (str, key) => {
-      if (key?.ctrl && key.name === 'c') { cleanup(); process.exit(0); }
+      if (key?.ctrl && key.name === 'c') { cleanup(); exitApp(); }
       if (key?.name === 'return' || str === '\r' || str === '\n') {
         cleanup();
         process.stdout.write('\n');
@@ -502,7 +508,7 @@ async function main() {
     }
   }
   rl.close();
-  process.exit(0);
+  exitApp();
 }
 
 main();
