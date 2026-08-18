@@ -625,6 +625,15 @@ export async function submitReflection(text, email, password, topic = '오늘의
         await login(page, email, password);
         await page.goto(reflectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 15000 }).catch(() => {});
+        // 로그인 직후 세션 토큰이 아직 기록 전이면 재이동 시 로그인 페이지로 다시 튕길 수 있음 — 재시도
+        if (!page.url().includes('/csr-platform/')) {
+          await page.waitForTimeout(2000);
+          await page.goto(reflectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+          await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 15000 }).catch(() => {});
+        }
+        if (!page.url().includes('/csr-platform/')) {
+          throw new Error('로그인 후 회고 페이지 진입 실패 (세션 미기록 추정)');
+        }
         break;
       }
     }

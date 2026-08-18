@@ -77,11 +77,21 @@ async function doReflect() {
   const text = textInput || await generateReflection(topic);
   console.log(`📝 내용: ${text.slice(0, 80)}...\n`);
 
-  const result = await submitReflection(
-    text, EMAIL, PASSWORD, topic, date,
-    async (step) => console.log(`[진행] ${step}`),
-    async (msg) => console.warn(`[경고] ${msg}`),
-  );
+  let result;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      result = await submitReflection(
+        text, EMAIL, PASSWORD, topic, date,
+        async (step) => console.log(`[진행] ${step}`),
+        async (msg) => console.warn(`[경고] ${msg}`),
+      );
+      break;
+    } catch (err) {
+      if (attempt === 2) throw err;
+      console.warn(`⚠️ 1차 시도 실패 — 재시도: ${err.message}`);
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
 
   const dateLabel = date ?? todayKST();
   if (result !== 'already_done') {
