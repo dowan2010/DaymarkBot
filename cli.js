@@ -286,7 +286,7 @@ function printMenuTop() {
 }
 
 // 입력 줄로 커서를 되돌려 raw keypress로 번호를 받고, 그 자리에 선택 결과를 다시 그림
-const ROWS_BELOW_INPUT = 5; // 입력줄 다음에 그려진 줄 수 (박스하단/공백/구분선/팁/외곽하단)
+const ROWS_BELOW_INPUT = 6; // 입력줄 다음에 그려진 5줄(박스하단/공백/구분선/팁/외곽하단) + 마지막 console.log가 만든 개행 1줄
 async function captureMenuChoice() {
   const term = process.stdout.columns || 80;
   const leftPad = Math.max(Math.floor((term - CARD_WIDTH) / 2), 0);
@@ -323,6 +323,7 @@ async function main() {
     await ask(`\n${C.dim}엔터를 누르면 메뉴로 돌아감...${C.reset}`);
   }
   rl.close();
+  process.exit(0);
 }
 
 main();
