@@ -511,4 +511,18 @@ async function main() {
   exitApp();
 }
 
+// 예상 못 한 에러로 죽을 때 화면 지우고 실제 에러 보여줌 (그냥 검게 멈춘 채 죽는 것 방지)
+process.on('uncaughtException', (err) => {
+  if (TTY) process.stdout.write('\x1b[2J\x1b[H\x1b[0m');
+  console.error('❌ 예상 못 한 오류로 종료됨:\n');
+  console.error(err.stack || err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (err) => {
+  if (TTY) process.stdout.write('\x1b[2J\x1b[H\x1b[0m');
+  console.error('❌ 예상 못 한 오류로 종료됨:\n');
+  console.error(err?.stack || err);
+  process.exit(1);
+});
+
 main();
