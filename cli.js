@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { createInterface } from 'readline/promises';
+import { emitKeypressEvents } from 'readline';
 import { submitReflection, resetReflection, getTasksWithToken, browserCreateTask, browserCreateSchedule } from './automation.js';
 import { addSubmissionHistory, removeSubmissionHistory, addRecentTopic, getRecentTopics } from './lib/data.js';
 import { generateTopic, generateReflection, generateWithRetry } from './lib/ai.js';
@@ -41,6 +42,28 @@ function ensureCreds({ gemini = true, account = true } = {}) {
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q) => rl.question(q);
+if (process.stdin.isTTY) emitKeypressEvents(process.stdin, rl);
+
+// 메뉴 번호는 raw keypress로 즉시 받음 (엔터 필요 없음, Claude Code류 TUI 방식)
+function readKey(validKeys) {
+  const TTY_IN = process.stdin.isTTY;
+  if (!TTY_IN) return ask('').then(s => s.trim());
+  return new Promise((resolve) => {
+    rl.pause();
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    const onKeypress = (str, key) => {
+      if (key?.ctrl && key.name === 'c') { cleanup(); process.exit(0); }
+      if (str && validKeys.includes(str)) { cleanup(); resolve(str); }
+    };
+    function cleanup() {
+      process.stdin.removeListener('keypress', onKeypress);
+      if (!process.stdin.destroyed) process.stdin.setRawMode(false);
+      try { rl.resume(); } catch {}
+    }
+    process.stdin.on('keypress', onKeypress);
+  });
+}
 
 function todayKST() {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -240,17 +263,13 @@ function printMenuTop() {
   const innerLine = '─'.repeat(INNER_WIDTH + 2);
   p(row(`  ┌${innerLine}┐`, `  ${C.dim}┌${innerLine}┐${C.reset}`, WIDTH));
 
-  const term = process.stdout.columns || 80;
-  const leftMargin = Math.max(Math.floor((term - CARD_WIDTH) / 2), 0);
-  const boxPrefix = `${BG}${' '.repeat(leftMargin)}${C.dim}│${C.reset}   ${C.dim}│${C.reset} `;
-  if (TTY) process.stdout.write(boxPrefix);
-}
-
-// 입력 박스를 닫고 하단(팁) 그림
-function printMenuBottom() {
-  const line = '─'.repeat(WIDTH + 2);
-  const innerLine = '─'.repeat(INNER_WIDTH + 2);
-  const p = (cardLine) => screenCenter(cardLine, CARD_WIDTH);
+  // 입력 줄 — 왼쪽 오렌지 악센트바(┃) + placeholder. 실제 입력은 커서를 이 자리로
+  // 되돌려서 raw keypress로 받음 (captureMenuChoice)
+  const placeholder = '번호 선택 (0=종료)';
+  const pad = ' '.repeat(Math.max(INNER_WIDTH - vwidth(placeholder), 0));
+  const plainInput = `  │ ${placeholder}${pad} │`;
+  const coloredInput = `  ${C.orange}┃${C.reset} ${C.dim}${placeholder}${C.reset}${pad} ${C.dim}│${C.reset}`;
+  p(row(plainInput, coloredInput, WIDTH));
 
   p(row(`  └${innerLine}┘`, `  ${C.dim}└${innerLine}┘${C.reset}`, WIDTH));
   p(row('', '', WIDTH));
@@ -260,11 +279,32 @@ function printMenuBottom() {
   p(`${C.dim}└${line}┘${C.reset}`);
 }
 
+// 입력 줄로 커서를 되돌려 raw keypress로 번호를 받고, 그 자리에 선택 결과를 다시 그림
+const ROWS_BELOW_INPUT = 5; // 입력줄 다음에 그려진 줄 수 (박스하단/공백/구분선/팁/외곽하단)
+async function captureMenuChoice() {
+  const term = process.stdout.columns || 80;
+  const leftPad = Math.max(Math.floor((term - CARD_WIDTH) / 2), 0);
+  const col = leftPad + 2 /* │+space */ + 2 /* 들여쓰기 */ + 2 /* ┃+space */ + 1;
+  if (TTY) process.stdout.write(`\x1b[${ROWS_BELOW_INPUT}A\x1b[${col}G`);
+
+  const validKeys = MENU.map((_, i) => String(i + 1)).concat('0');
+  const choice = await readKey(validKeys);
+
+  if (TTY) {
+    const item = MENU[Number(choice) - 1];
+    const label = choice === '0' ? '종료' : (item ? item.label : '잘못된 입력');
+    const confirmPlain = `${choice}. ${label}`;
+    const confirmPad = ' '.repeat(Math.max(INNER_WIDTH - vwidth(confirmPlain), 0));
+    process.stdout.write(`\x1b[${col}G${C.bold}${C.green}${confirmPlain}${C.reset}${confirmPad}`);
+    process.stdout.write(`\x1b[${ROWS_BELOW_INPUT}B\r`);
+  }
+  return choice;
+}
+
 async function main() {
   while (true) {
     printMenuTop();
-    const choice = (await ask(`${C.gray}번호 입력 (0=종료):${C.reset} `)).trim();
-    printMenuBottom();
+    const choice = await captureMenuChoice();
     if (choice === '0') break;
     const item = MENU[Number(choice) - 1];
     if (!item) { console.log('잘못된 입력'); continue; }
