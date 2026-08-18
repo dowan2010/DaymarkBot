@@ -169,6 +169,24 @@ function truncateToWidth(s, maxWidth) {
 function row(plainText, coloredText, width, pad = ' ') {
   return `${C.dim}│${C.reset} ${coloredText}${pad.repeat(Math.max(width - vwidth(plainText), 0))} ${C.dim}│${C.reset}`;
 }
+// 큰 블록 글자 배너 (스프링부트 배너 같은 느낌) — 필요한 글자만 5줄짜리 폰트로 직접 만듦
+const BIG_FONT = {
+  'A': [' ██ ', '█  █', '████', '█  █', '█  █'],
+  'E': ['████', '█   ', '███ ', '█   ', '████'],
+  'N': ['█  █', '██ █', '█ ██', '█  █', '█  █'],
+  'O': [' ██ ', '█  █', '█  █', '█  █', ' ██ '],
+  'R': ['███ ', '█  █', '███ ', '█ █ ', '█  █'],
+  'T': ['████', ' ██ ', ' ██ ', ' ██ ', ' ██ '],
+  'U': ['█  █', '█  █', '█  █', '█  █', ' ██ '],
+  'W': ['█   █', '█   █', '█ █ █', '██ ██', '█   █'],
+  '-': ['     ', '     ', '█████', '     ', '     '],
+  ' ': ['  ', '  ', '  ', '  ', '  '],
+};
+function bigText(str) {
+  const glyphs = [...str.toUpperCase()].map(ch => BIG_FONT[ch] ?? BIG_FONT[' ']);
+  return Array.from({ length: 5 }, (_, row) => glyphs.map(g => g[row]).join(' '));
+}
+
 function center(plainText, coloredText, width) {
   const gap = Math.max(width - vwidth(plainText), 0);
   const left = Math.floor(gap / 2), right = gap - left;
@@ -198,10 +216,11 @@ function screenCenter(coloredText, plainWidth) {
 let WIDTH = 50;
 let CARD_WIDTH = WIDTH + 4;
 let INNER_WIDTH = WIDTH - 6;
+const BANNER_MIN_WIDTH = 66; // 블록 배너("AUTO-NEWRROW")가 62칸 필요 — 카드 폭이 이보다 좁으면 안 됨
 function recomputeLayout() {
   const cols = process.stdout.columns || 80;
   const target = Math.round(cols * 0.8);
-  CARD_WIDTH = Math.max(54, Math.min(target, cols - 4, 160));
+  CARD_WIDTH = Math.max(BANNER_MIN_WIDTH, Math.min(target, cols - 4, 160));
   WIDTH = CARD_WIDTH - 4;
   INNER_WIDTH = WIDTH - 6; // 바깥 여백 2칸씩 + 안쪽 박스 테두리 2칸
 }
@@ -240,8 +259,7 @@ function drawCard(contentLines, placeholder) {
   if (!TTY) console.log('');
   p(`${C.dim}┌${line}┐${C.reset}`);
   p(row('', '', WIDTH));
-  p(center('A U T O - N E W R R O W', `${C.gray}A U T O - N E W R R O W${C.reset}`, WIDTH));
-  p(center('AUTO-NEWRROW CLI', `${C.bold}${C.orange}AUTO-NEWRROW${C.reset} ${C.bold}${C.light}CLI${C.reset}`, WIDTH));
+  bigText('AUTO-NEWRROW').forEach(l => p(center(l, `${C.bold}${C.orange}${l}${C.reset}`, WIDTH)));
   p(row('', '', WIDTH));
 
   padContentRows(contentLines).forEach(l => p(row(l.plain, l.colored, WIDTH)));
@@ -263,11 +281,11 @@ function drawCard(contentLines, placeholder) {
 }
 
 // drawCard가 그리는 줄 순서(0-index, vPad 이후 기준):
-// 0 상단테두리 1 공백 2 라벨 3 타이틀 4 공백 5..(5+CONTENT_ROWS-1) 내용 (+1) 공백
+// 0 상단테두리 1 공백 2..6 배너(5줄) 7 공백 8..(8+CONTENT_ROWS-1) 내용 (+1) 공백
 // (+1) 입력박스상단 (+1) 입력줄 (+1) 입력박스하단 (+1) 공백 (+1) 구분선 (+1) 팁 (+1) 하단테두리
 // drawCard 종료 직후(마지막 console.log의 개행 포함) 커서는 CARD_HEIGHT번째 줄에 있음
 // CONTENT_ROWS를 바꿔도 아래 값들이 자동으로 맞춰짐
-const CONTENT_FIRST_INDEX = 5;
+const CONTENT_FIRST_INDEX = 8;
 const INPUT_ROW_INDEX = CONTENT_FIRST_INDEX + CONTENT_ROWS + 2;
 const CARD_HEIGHT = CONTENT_FIRST_INDEX + CONTENT_ROWS + 8;
 const RESTING_INDEX = CARD_HEIGHT;
