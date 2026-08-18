@@ -638,6 +638,7 @@ export async function submitReflection(text, email, password, topic = '오늘의
         if (!page.url().includes('/csr-platform/')) {
           throw new Error('로그인 후 회고 페이지 진입 실패 (세션 미기록 추정)');
         }
+        await onProgress('로그인 성공');
         break;
       }
     }
@@ -645,16 +646,23 @@ export async function submitReflection(text, email, password, topic = '오늘의
     // SPA가 URL은 먼저 /csr-platform/으로 바꾼 뒤, 세션이 없는 걸 뒤늦게 확인하고
     // 클라이언트 사이드에서 로그인 페이지로 다시 튕기는 경우가 있음 — 위 while문은
     // URL을 한 번만 확인하고 바로 통과시켜서 이 뒤늦은 리다이렉트를 놓칠 수 있었음.
-    // 잠깐 대기 후 한 번 더 확인해서, 로그인 페이지로 밀려났으면 여기서 다시 로그인함.
-    await page.waitForTimeout(800);
-    if (!page.url().includes('/csr-platform/')) {
+    // 몇 초간 반복 확인해서, 로그인 페이지로 밀려났으면 여기서 다시 로그인함.
+    let settled = false;
+    for (let i = 0; i < 6; i++) {
+      await page.waitForTimeout(500);
+      if (page.url().includes('/csr-platform/') && !page.url().includes('/login')) { settled = true; break; }
+      if (page.url().includes('inhrplus.com') || page.url().includes('/login')) break;
+    }
+    if (!settled) {
       await onProgress('로그인 중...');
       await login(page, email, password, silent);
       await page.goto(reflectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 15000 }).catch(() => {});
       if (!page.url().includes('/csr-platform/')) {
+        await onWarning('로그인 실패 — 회고 페이지 진입 안 됨');
         throw new Error('로그인 후 회고 페이지 진입 실패 (뒤늦은 리다이렉트)');
       }
+      await onProgress('로그인 성공');
     }
 
     await dismissLoginPopup(page, silent);
