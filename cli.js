@@ -92,7 +92,10 @@ function readLine() {
           const last = buf[buf.length - 1];
           buf = buf.slice(0, -1);
           const w = vwidth(last);
-          process.stdout.write('\b'.repeat(w) + ' '.repeat(w) + '\b'.repeat(w));
+          // raw \b(0x08) 대신 CSI 커서이동 사용 + 배경색 명시 — 그냥 \b로 지우면
+          // 커서 위치 SGR(배경색) 상태가 애매해져서 일부 터미널(macOS 기본 터미널 포함)에서
+          // 화면 일부가 엉뚱한 배경색으로 렌더링되는 문제가 있었음
+          process.stdout.write(`\x1b[${w}D${BG}${' '.repeat(w)}\x1b[${w}D${FULL_RESET}`);
         }
         return;
       }
@@ -100,7 +103,7 @@ function readLine() {
       if (key?.name && key.name.length > 1) return;
       if (str && !key?.ctrl && !key?.meta && str.charCodeAt(0) >= 0x20) {
         buf += str;
-        process.stdout.write(str);
+        process.stdout.write(`${BG}${C.light}${str}${FULL_RESET}`);
       }
     };
     function cleanup() {
