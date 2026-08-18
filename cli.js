@@ -161,26 +161,71 @@ function vwidth(s) {
   }
   return w;
 }
-function row(plainText, coloredText, width) {
-  return `${C.dim}│${C.reset} ${coloredText}${' '.repeat(Math.max(width - vwidth(plainText), 0))} ${C.dim}│${C.reset}`;
+function row(plainText, coloredText, width, pad = ' ') {
+  return `${C.dim}│${C.reset} ${coloredText}${pad.repeat(Math.max(width - vwidth(plainText), 0))} ${C.dim}│${C.reset}`;
+}
+function center(plainText, coloredText, width) {
+  const gap = Math.max(width - vwidth(plainText), 0);
+  const left = Math.floor(gap / 2), right = gap - left;
+  return `${C.dim}│${C.reset} ${' '.repeat(left)}${coloredText}${' '.repeat(right)} ${C.dim}│${C.reset}`;
+}
+
+function innerRow(text, coloredText, innerWidth) {
+  const pad = ' '.repeat(Math.max(innerWidth - vwidth(text), 0));
+  return { plain: `│ ${text}${pad} │`, colored: `${C.dim}│${C.reset} ${coloredText}${pad} ${C.dim}│${C.reset}` };
 }
 
 function printMenu() {
-  const WIDTH = 40;
+  const WIDTH = 50;
   const line = '─'.repeat(WIDTH + 2);
+  const inner = WIDTH - 6; // 바깥 여백 2칸씩 + 안쪽 박스 테두리 2칸
+  const innerLine = '─'.repeat(inner + 2);
+
   console.log(`${C.dim}┌${line}┐${C.reset}`);
-  console.log(row('AUTO-NEWRROW', `${C.bold}${C.orange}AUTO-NEWRROW${C.reset}`, WIDTH));
+  console.log(row('', '', WIDTH));
+  console.log(center('A U T O - N E W R R O W', `${C.gray}A U T O - N E W R R O W${C.reset}`, WIDTH));
+  console.log(center('AUTO-NEWRROW CLI', `${C.bold}${C.orange}AUTO-NEWRROW${C.reset} ${C.bold}${C.light}CLI${C.reset}`, WIDTH));
+  console.log(row('', '', WIDTH));
+
+  // 안쪽 미니 터미널 프리뷰
+  console.log(row(`  ┌${innerLine}┐`, `  ${C.dim}┌${innerLine}┐${C.reset}`, WIDTH));
+  {
+    const l1 = innerRow('Type a number... (0 to exit)', `${C.gray}Type a number... (0 to exit)${C.reset}`, inner);
+    console.log(row(`  ${l1.plain}`, `  ${l1.colored}`, WIDTH));
+  }
+  {
+    const left = `1. ${MENU[0].label}`;
+    const right = 'Gemini · Playwright';
+    const gap = Math.max(inner - vwidth(left) - vwidth(right), 1);
+    const plainInner = `${left}${' '.repeat(gap)}${right}`;
+    const coloredInner = `${C.green}${left}${C.reset}${' '.repeat(gap)}${C.dim}${right}${C.reset}`;
+    const l2 = innerRow(plainInner, coloredInner, inner);
+    console.log(row(`  ${l2.plain}`, `  ${l2.colored}`, WIDTH));
+  }
+  console.log(row(`  └${innerLine}┘`, `  ${C.dim}└${innerLine}┘${C.reset}`, WIDTH));
+  console.log(row('', '', WIDTH));
+
+  // 축약 단축키 줄
+  const shortLabels = ['1 회고', '2 초기화', '3 할일', '...', '0 종료'];
+  const shortPlain = shortLabels.join('   ');
+  const shortColored = shortLabels.map(s => {
+    const [num, ...rest] = s.split(' ');
+    return /^\d$/.test(num) ? `${C.gray}${num}${C.reset} ${C.light}${rest.join(' ')}${C.reset}` : `${C.dim}${s}${C.reset}`;
+  }).join('   ');
+  console.log(center(shortPlain, shortColored, WIDTH));
+  console.log(row('', '', WIDTH));
+
   console.log(`${C.dim}├${line}┤${C.reset}`);
+  const tip = '● 터미널 한 줄이면 오늘 회고 끝';
+  console.log(row(tip, `${C.orange}●${C.reset} ${C.dim}터미널 한 줄이면 오늘 회고 끝${C.reset}`, WIDTH));
+  console.log(`${C.dim}└${line}┘${C.reset}`);
+
+  console.log('');
   MENU.forEach((m, i) => {
     const color = i === 0 ? C.green : C.light;
-    const plain = `${i + 1}. ${m.label}`;
-    console.log(row(plain, `${C.gray}${i + 1}.${C.reset} ${color}${m.label}${C.reset}`, WIDTH));
+    console.log(`${C.gray}${i + 1}.${C.reset} ${color}${m.label}${C.reset}`);
   });
-  console.log(row('0. 종료', `${C.gray}0.${C.reset} ${C.light}종료${C.reset}`, WIDTH));
-  console.log(`${C.dim}├${line}┤${C.reset}`);
-  const tip = '● 뉴로우 회고 자동화 · Gemini';
-  console.log(row(tip, `${C.orange}●${C.reset} ${C.dim}뉴로우 회고 자동화 · Gemini${C.reset}`, WIDTH));
-  console.log(`${C.dim}└${line}┘${C.reset}`);
+  console.log(`${C.gray}0.${C.reset} ${C.light}종료${C.reset}`);
 }
 
 async function main() {
