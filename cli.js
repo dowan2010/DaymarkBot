@@ -402,6 +402,7 @@ async function doReflect() {
         text, EMAIL, PASSWORD, topic, date,
         async (step) => { pushLog(`▸ ${step}`); updateContent(renderLog()); },
         async (msg) => { pushLog(`⚠ ${msg}`); updateContent(renderLog()); },
+        undefined, true, // silent=true — automation.js 내부 진단 로그가 카드 밖으로 새는 것 방지
       );
       break;
     } catch (err) {
@@ -429,7 +430,7 @@ async function doReset() {
   ensureCreds({ gemini: false });
   const dateLabel = (await cardAsk([contentRow('회고 초기화', `${C.bold}회고 초기화${C.reset}`)], '초기화할 날짜 (엔터=오늘)')) || todayKST();
   drawCard([textLine('날짜', dateLabel)], '초기화 중...');
-  const result = await resetReflection(EMAIL, PASSWORD, dateLabel);
+  const result = await resetReflection(EMAIL, PASSWORD, dateLabel, true);
   removeSubmissionHistory(result.date);
   await cardWait([contentRow('초기화 완료', `${C.green}✅ ${result.date} 초기화 완료${C.reset}`)]);
 }
@@ -437,7 +438,7 @@ async function doReset() {
 async function doTasks() {
   ensureCreds({ gemini: false });
   drawCard([], '할일 불러오는 중...');
-  const { tasks } = await getTasksWithToken(EMAIL, PASSWORD);
+  const { tasks } = await getTasksWithToken(EMAIL, PASSWORD, true);
   const lines = tasks.length
     ? tasks.slice(0, CONTENT_ROWS).map((t, i) => contentRow(`${i + 1}. ${t.title ?? t.taskTitle ?? t.name}`, `${C.gray}${i + 1}.${C.reset} ${C.light}${t.title ?? t.taskTitle ?? t.name}${C.reset}`))
     : [contentRow('할일 없음', `${C.dim}할일 없음${C.reset}`)];
@@ -449,7 +450,7 @@ async function doTaskAdd() {
   const title = await cardAsk([contentRow('할일 추가', `${C.bold}할일 추가${C.reset}`)], '할일 제목');
   if (!title) return;
   drawCard([textLine('제목', title)], '추가 중...');
-  const { status, taskId } = await browserCreateTask(EMAIL, PASSWORD, title);
+  const { status, taskId } = await browserCreateTask(EMAIL, PASSWORD, title, true);
   await cardWait([
     contentRow('추가 완료', `${C.green}✅ status=${status}${C.reset}`),
     textLine('taskId', taskId ?? '(할일 목록에서 확인)'),
@@ -465,7 +466,7 @@ async function doSchedule() {
   const endISO = await cardAsk([textLine('taskId', taskId), textLine('시작', startISO)], '종료 (YYYY-MM-DDTHH:mm:00)');
   if (!endISO) return;
   drawCard([textLine('taskId', taskId), textLine('시작', startISO), textLine('종료', endISO)], '등록 중...');
-  const { status } = await browserCreateSchedule(EMAIL, PASSWORD, taskId, startISO, endISO);
+  const { status } = await browserCreateSchedule(EMAIL, PASSWORD, taskId, startISO, endISO, true);
   await cardWait([contentRow('등록 완료', `${C.green}✅ status=${status}${C.reset}`)]);
 }
 

@@ -179,11 +179,12 @@ async function forceClickConfirm(page, successCheck, label = '확인') {
 }
 
 // 로그인 안내 팝업이 있으면 닫기 (portal 렌더링이라 page 전체에서 탐색)
-export async function dismissLoginPopup(page) {
+export async function dismissLoginPopup(page, silent = false) {
+  const log = silent ? () => {} : console.log.bind(console);
   try {
     const popup = await page.waitForSelector('[class*="loginHistoryPopup-module__popup"]', { timeout: 4000 });
     if (!popup) return;
-    console.log('로그인 팝업 감지 — 닫는 중...');
+    log('로그인 팝업 감지 — 닫는 중...');
 
     // 푸터 확인 버튼 클릭 시도 1: 클래스 선택자
     let clicked = false;
@@ -213,7 +214,7 @@ export async function dismissLoginPopup(page) {
       });
     }
 
-    console.log('로그인 팝업 닫힘 — aria-hidden 해제 대기 중...');
+    log('로그인 팝업 닫힘 — aria-hidden 해제 대기 중...');
     // #root 의 aria-hidden 이 풀릴 때까지 대기
     await page.waitForFunction(
       () => !document.querySelector('#root')?.hasAttribute('aria-hidden'),
@@ -224,14 +225,15 @@ export async function dismissLoginPopup(page) {
       () => !document.querySelector('[class*="loginHistoryPopup-module__popup"]'),
       { timeout: 2000 }
     ).catch(() => {});
-    console.log('팝업 해제 완료');
+    log('팝업 해제 완료');
   } catch {
     // 팝업 없으면 조용히 통과
   }
 }
 
-export async function login(page, email, password) {
-  console.log('로그인 중... 현재 URL:', page.url());
+export async function login(page, email, password, silent = false) {
+  const log = silent ? () => {} : console.log.bind(console);
+  log('로그인 중... 현재 URL:', page.url());
 
   const EMAIL_SEL = '#accountId, input[type="email"], input[name="username"], input[name="email"]';
   const PW_SEL = '#accountPassword, input[type="password"]';
@@ -243,7 +245,7 @@ export async function login(page, email, password) {
     const cnt = await f.locator(EMAIL_SEL).count().catch(() => 0);
     if (cnt > 0) {
       frame = f;
-      console.log('[login] 로그인 폼 iframe 내 발견:', f.url());
+      log('[login] 로그인 폼 iframe 내 발견:', f.url());
       break;
     }
   }
@@ -253,12 +255,12 @@ export async function login(page, email, password) {
   const submitBtn = frame.locator(SUBMIT_SEL).first();
 
   await emailInput.waitFor({ state: 'visible', timeout: 10000 }).catch(e => { throw stepError('로그인 폼 로딩', e); });
-  console.log('[login] 로그인 폼 발견 — 입력 중...');
+  log('[login] 로그인 폼 발견 — 입력 중...');
   // fill()은 React controlled input에 직접 값 주입 (keystroke 없음, 즉각)
   await emailInput.fill(email);
   await pwInput.fill(password);
   await submitBtn.click();
-  console.log('[login] 로그인 폼 제출 완료');
+  log('[login] 로그인 폼 제출 완료');
 
   // URL 폴링으로 로그인 결과 확인 (최대 60초)
   let result = 'timeout';
@@ -292,10 +294,11 @@ export async function login(page, email, password) {
     const root = document.querySelector('#root');
     return root && root.children.length > 0 && !root.hasAttribute('aria-hidden');
   }, { timeout: 10000 }).catch(() => {});
-  console.log('로그인 성공');
+  log('로그인 성공');
 }
 
-export async function resetReflection(email, password, date = null) {
+export async function resetReflection(email, password, date = null, silent = false) {
+  const log = silent ? () => {} : console.log.bind(console);
   const targetDate = date ?? new Date().toISOString().split('T')[0];
   const reflectionUrl = `https://dgsm.newrrow.com/csr-platform/reflection/daily/chat-type?date=${targetDate}`;
 
@@ -315,23 +318,23 @@ export async function resetReflection(email, password, date = null) {
     const m = url.match(/\/daily-reflections\/(\d+)/);
     if (m) reflectionId = m[1];
     // 모든 요청 URL 출력 (디버그)
-    if (url.includes('newrrow') || url.includes('inhrplus') || url.includes('api-agw')) console.log(`[회고초기화][REQ] ${req.method()} ${url}`);
+    if (url.includes('newrrow') || url.includes('inhrplus') || url.includes('api-agw')) log(`[회고초기화][REQ] ${req.method()} ${url}`);
   });
   page.on('response', async res => {
     try {
       const url = res.url();
       if (!url.includes('newrrow') && !url.includes('inhrplus') && !url.includes('api-agw')) return;
       // 응답 URL 전부 출력 (디버그)
-      console.log(`[회고초기화][RES] ${res.status()} ${url}`);
+      log(`[회고초기화][RES] ${res.status()} ${url}`);
       if (reflectionId) return;
       const ct = res.headers()['content-type'] ?? '';
       if (!ct.includes('application/json')) return;
       const body = await res.json().catch(() => null);
       if (!body) return;
-      console.log(`[회고초기화][BODY] ${url} →`, JSON.stringify(body).slice(0, 200));
+      log(`[회고초기화][BODY] ${url} →`, JSON.stringify(body).slice(0, 200));
       // { id }, { data: { id } }, { data: [{ id }] } 형태 처리
       const id = body?.id ?? body?.data?.id ?? (Array.isArray(body?.data) ? body.data[0]?.id : null) ?? (Array.isArray(body) ? body[0]?.id : null);
-      if (id) { reflectionId = String(id); console.log(`[회고초기화] reflectionId 캡처 (response): ${reflectionId}`); }
+      if (id) { reflectionId = String(id); log(`[회고초기화] reflectionId 캡처 (response): ${reflectionId}`); }
     } catch {}
   });
 
@@ -344,27 +347,27 @@ export async function resetReflection(email, password, date = null) {
       const curUrl = page.url();
       if (curUrl.includes('/csr-platform/')) break;
       if (curUrl.includes('inhrplus.com') || curUrl.includes('/login')) {
-        await login(page, email, password);
+        await login(page, email, password, silent);
         await page.goto(reflectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 15000 }).catch(() => {});
         break;
       }
     }
-    await dismissLoginPopup(page);
+    await dismissLoginPopup(page, silent);
 
     const deadline = Date.now() + 12000;
     while (!(token && reflectionId) && Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 500));
       const curUrl = page.url();
       if (curUrl.includes('inhrplus.com') || curUrl.includes('/login')) {
-        console.log('[회고초기화] 폴링 중 로그인 리다이렉트 감지 — 재로그인');
-        await login(page, email, password);
+        log('[회고초기화] 폴링 중 로그인 리다이렉트 감지 — 재로그인');
+        await login(page, email, password, silent);
         await page.goto(reflectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 10000 }).catch(() => {});
-        await dismissLoginPopup(page);
+        await dismissLoginPopup(page, silent);
       }
     }
-    console.log(`[회고초기화] 캡처 결과: token=${!!token} reflId=${reflectionId}`);
+    log(`[회고초기화] 캡처 결과: token=${!!token} reflId=${reflectionId}`);
 
     if (!token || !reflectionId) throw new Error(`데이터 캡처 실패 (token=${!!token} reflId=${reflectionId})`);
 
@@ -382,7 +385,7 @@ export async function resetReflection(email, password, date = null) {
         'Accept': 'application/json, text/plain, */*',
       },
     });
-    console.log(`[회고초기화] DELETE ${reflectionId}: ${status}`);
+    log(`[회고초기화] DELETE ${reflectionId}: ${status}`);
     if (status < 200 || status >= 300) throw new Error(`DELETE 실패 (status=${status})`);
     return { reflectionId, date: targetDate };
   } finally {
@@ -390,7 +393,7 @@ export async function resetReflection(email, password, date = null) {
   }
 }
 
-export async function getTasksWithToken(email, password) {
+export async function getTasksWithToken(email, password, silent = false) {
   const isHeadless = process.env.HEADLESS !== 'false';
   const browser = await chromium.launch({
     headless: isHeadless,
@@ -421,21 +424,21 @@ export async function getTasksWithToken(email, password) {
       { timeout: 10000 }
     ).catch(() => {});
     if (page.url().includes('login') || page.url().includes('inhrplus.com')) {
-      await login(page, email, password);
+      await login(page, email, password, silent);
       await page.goto(tokenPage, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 10000 }).catch(() => {});
     }
-    await dismissLoginPopup(page);
+    await dismissLoginPopup(page, silent);
 
     const deadline = Date.now() + 12000;
     while (!token && Date.now() < deadline) {
       await page.waitForTimeout(500);
       const curUrl = page.url();
       if (curUrl.includes('inhrplus.com') || curUrl.includes('/login')) {
-        await login(page, email, password);
+        await login(page, email, password, silent);
         await page.goto(tokenPage, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 10000 }).catch(() => {});
-        await dismissLoginPopup(page);
+        await dismissLoginPopup(page, silent);
       }
     }
 
@@ -472,7 +475,8 @@ export async function getTasksWithToken(email, password) {
   }
 }
 
-async function _loginAndGetPage(email, password) {
+async function _loginAndGetPage(email, password, silent = false) {
+  const log = silent ? () => {} : console.log.bind(console);
   const isHeadless = process.env.HEADLESS !== 'false';
   const browser = await chromium.launch({
     headless: isHeadless,
@@ -499,13 +503,13 @@ async function _loginAndGetPage(email, password) {
     const curUrl = page.url();
     if (curUrl.includes('/csr-platform/')) break;
     if (curUrl.includes('inhrplus.com') || curUrl.includes('/login')) {
-      await login(page, email, password);
+      await login(page, email, password, silent);
       await page.goto(tokenPage, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 15000 }).catch(() => {});
       break;
     }
   }
-  await dismissLoginPopup(page);
+  await dismissLoginPopup(page, silent);
 
   // token 캡처 대기 (최대 8초)
   const deadline = Date.now() + 8000;
@@ -518,7 +522,7 @@ async function _loginAndGetPage(email, password) {
     while (!token && Date.now() < d2) await page.waitForTimeout(500);
   }
 
-  console.log(`[_loginAndGetPage] token ${token ? '캡처 성공 ('+token.slice(0,20)+'...)' : '캡처 실패(null)'}`);
+  log(`[_loginAndGetPage] token ${token ? '캡처 성공 ('+token.slice(0,20)+'...)' : '캡처 실패(null)'}`);
   return { browser, page, token };
 }
 
@@ -537,8 +541,8 @@ async function _contextPost(page, token, url, body) {
   return { status: res.status(), data };
 }
 
-export async function browserCreateTask(email, password, title) {
-  const { browser, page, token } = await _loginAndGetPage(email, password);
+export async function browserCreateTask(email, password, title, silent = false) {
+  const { browser, page, token } = await _loginAndGetPage(email, password, silent);
   try {
     return await _contextPost(page, token, 'https://api-agw.newrrow.com/main/api/v1/tasks', { goalId: null, title });
   } finally {
@@ -546,8 +550,8 @@ export async function browserCreateTask(email, password, title) {
   }
 }
 
-export async function browserCreateSchedule(email, password, taskId, startDateTime, endDateTime) {
-  const { browser, page, token } = await _loginAndGetPage(email, password);
+export async function browserCreateSchedule(email, password, taskId, startDateTime, endDateTime, silent = false) {
+  const { browser, page, token } = await _loginAndGetPage(email, password, silent);
   try {
     return await _contextPost(page, token, 'https://api-agw.newrrow.com/main/api/v2/schedules', {
       taskId: Number(taskId), isAllDay: false, startDateTime, endDateTime,
@@ -622,7 +626,7 @@ export async function submitReflection(text, email, password, topic = '오늘의
       if (curUrl.includes('/csr-platform/')) break;
       if (curUrl.includes('inhrplus.com') || curUrl.includes('/login')) {
         await onProgress('로그인 중...');
-        await login(page, email, password);
+        await login(page, email, password, silent);
         await page.goto(reflectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 15000 }).catch(() => {});
         // 로그인 직후 세션 토큰이 아직 기록 전이면 재이동 시 로그인 페이지로 다시 튕길 수 있음 — 재시도
@@ -637,7 +641,23 @@ export async function submitReflection(text, email, password, topic = '오늘의
         break;
       }
     }
-    await dismissLoginPopup(page);
+
+    // SPA가 URL은 먼저 /csr-platform/으로 바꾼 뒤, 세션이 없는 걸 뒤늦게 확인하고
+    // 클라이언트 사이드에서 로그인 페이지로 다시 튕기는 경우가 있음 — 위 while문은
+    // URL을 한 번만 확인하고 바로 통과시켜서 이 뒤늦은 리다이렉트를 놓칠 수 있었음.
+    // 잠깐 대기 후 한 번 더 확인해서, 로그인 페이지로 밀려났으면 여기서 다시 로그인함.
+    await page.waitForTimeout(800);
+    if (!page.url().includes('/csr-platform/')) {
+      await onProgress('로그인 중...');
+      await login(page, email, password, silent);
+      await page.goto(reflectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 15000 }).catch(() => {});
+      if (!page.url().includes('/csr-platform/')) {
+        throw new Error('로그인 후 회고 페이지 진입 실패 (뒤늦은 리다이렉트)');
+      }
+    }
+
+    await dismissLoginPopup(page, silent);
 
     log('회고 페이지 URL:', page.url());
 
@@ -839,7 +859,7 @@ export async function submitReflection(text, email, password, topic = '오늘의
       if (nextSt >= 200 && nextSt < 300) {
         diagDone = true;
         await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
-        await dismissLoginPopup(page);
+        await dismissLoginPopup(page, silent);
         await page.waitForFunction(() => {
           const root = document.querySelector('#root');
           return root && root.children.length > 0 && !root.hasAttribute('aria-hidden');
@@ -1158,7 +1178,7 @@ export async function submitReflection(text, email, password, topic = '오늘의
         if (nextSt >= 200 && nextSt < 300) {
           topicDone = true;
           await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
-          await dismissLoginPopup(page);
+          await dismissLoginPopup(page, silent);
           await page.waitForFunction(() => {
             const root = document.querySelector('#root');
             return root && root.children.length > 0 && !root.hasAttribute('aria-hidden');
