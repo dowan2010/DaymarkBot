@@ -10,22 +10,18 @@ git clone https://github.com/dowan2010/newrrowBot.git
 cd newrrowBot
 npm install
 npx playwright install chromium
+npm link
 ```
+
+설치 끝나면 터미널 아무 위치에서나 `newrrow`만 치면 실행됨.
 
 ## 실행
 
 ```bash
-node cli.js
-```
-
-전역 명령어로 쓰고 싶으면:
-
-```bash
-npm link
 newrrow
 ```
 
-이후엔 터미널 아무 위치에서나 `newrrow`만 치면 실행됨.
+전역 명령어 없이 그냥 실행하고 싶으면 `node cli.js`도 됨.
 
 첫 실행 시 메뉴에서 **설정 (API 키 / 계정)** 선택 후 아래 값을 입력하면 `.env`에 저장됨.
 
