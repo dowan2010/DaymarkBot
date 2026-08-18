@@ -259,7 +259,13 @@ export async function login(page, email, password, silent = false) {
   // fill()은 React controlled input에 직접 값 주입 (keystroke 없음, 즉각)
   await emailInput.fill(email);
   await pwInput.fill(password);
-  await submitBtn.click();
+  // 제출 버튼 셀렉터가 사이트 변경 등으로 안 맞을 경우 대비 — 버튼 클릭 실패해도
+  // 비밀번호 입력창에서 Enter로 폼 제출 시도
+  const clicked = await submitBtn.click({ timeout: 5000 }).then(() => true).catch(() => false);
+  if (!clicked) {
+    log('[login] 제출 버튼 클릭 실패 — Enter로 재시도');
+    await pwInput.press('Enter').catch(() => {});
+  }
   log('[login] 로그인 폼 제출 완료');
 
   // URL 폴링으로 로그인 결과 확인 (최대 60초)
@@ -618,6 +624,9 @@ export async function submitReflection(text, email, password, topic = '오늘의
   try {
     await onProgress('뉴로우 접속 중...');
     await page.goto(reflectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // goto()는 서버 리다이렉트를 자동으로 따라가서, 돌아온 시점에 이미 다른 페이지(로그인 등)에
+    // 가있을 수 있음 — 다음 로그인 판단이 정확한지 확인할 수 있게 여기서 호스트를 보여줌
+    await onProgress(`페이지 확인: ${new URL(page.url()).host}`);
 
     const submitLoginDeadline = Date.now() + 15000;
     while (Date.now() < submitLoginDeadline) {
@@ -654,7 +663,7 @@ export async function submitReflection(text, email, password, topic = '오늘의
       if (page.url().includes('inhrplus.com') || page.url().includes('/login')) break;
     }
     if (!settled) {
-      await onProgress('로그인 중...');
+      await onProgress(`로그인 중... (${new URL(page.url()).host})`);
       await login(page, email, password, silent);
       await page.goto(reflectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 15000 }).catch(() => {});
