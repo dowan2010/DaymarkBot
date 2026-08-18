@@ -153,7 +153,11 @@ function vwidth(s) {
   let w = 0;
   for (const ch of s) {
     const cp = ch.codePointAt(0);
-    w += (cp >= 0xAC00 && cp <= 0xD7A3) || (cp >= 0x3130 && cp <= 0x318F) ? 2 : 1;
+    if (cp === 0xFE0F) continue; // variation selector-16 (이모지 표시 지정자) — 자체 폭 없음
+    const isWide = (cp >= 0xAC00 && cp <= 0xD7A3) || (cp >= 0x3130 && cp <= 0x318F) // 한글
+      || (cp >= 0x1F300 && cp <= 0x1FAFF) // 이모지(그림문자)
+      || (cp >= 0x2600 && cp <= 0x27BF); // 이모지로 쓰이는 기호/딩뱃
+    w += isWide ? 2 : 1;
   }
   return w;
 }
@@ -285,35 +289,37 @@ function drawCard(contentLines, placeholder) {
   for (let i = 0; i < vPad; i++) screenCenter('', 0);
 
   if (!TTY) console.log('');
-  p(`${C.dim}┌${line}┐${C.reset}`);
+  p(`${C.orange}╭${line}╮${C.reset}`);
   p(row('', '', WIDTH));
   bigTextWithShadow('AUTO-NEWRROW').forEach(l => p(center(l.plain, l.colored, WIDTH)));
+  const tagline = '뉴로우 회고 자동화 · Gemini 기반';
+  p(center(tagline, `${C.dim}${tagline}${C.reset}`, WIDTH));
   p(row('', '', WIDTH));
 
   padContentRows(contentLines).forEach(l => p(row(l.plain, l.colored, WIDTH)));
   p(row('', '', WIDTH));
 
   const innerLine = '─'.repeat(INNER_WIDTH + 2);
-  p(row(`  ┌${innerLine}┐`, `  ${C.dim}┌${innerLine}┐${C.reset}`, WIDTH));
+  p(row(`  ╭${innerLine}╮`, `  ${C.orange}╭${innerLine}╮${C.reset}`, WIDTH));
   const pad = ' '.repeat(Math.max(INNER_WIDTH - vwidth(placeholder), 0));
   const plainInput = `  │ ${placeholder}${pad} │`;
-  const coloredInput = `  ${C.orange}┃${C.reset} ${C.dim}${placeholder}${C.reset}${pad} ${C.dim}│${C.reset}`;
+  const coloredInput = `  ${C.orange}┃${C.reset} ${C.dim}${placeholder}${C.reset}${pad} ${C.orange}│${C.reset}`;
   p(row(plainInput, coloredInput, WIDTH));
-  p(row(`  └${innerLine}┘`, `  ${C.dim}└${innerLine}┘${C.reset}`, WIDTH));
+  p(row(`  ╰${innerLine}╯`, `  ${C.orange}╰${innerLine}╯${C.reset}`, WIDTH));
   p(row('', '', WIDTH));
 
-  p(`${C.dim}├${line}┤${C.reset}`);
-  const tip = '● 뉴로우 회고 자동화 · Gemini';
-  p(row(tip, `${C.orange}●${C.reset} ${C.dim}뉴로우 회고 자동화 · Gemini${C.reset}`, WIDTH));
-  p(`${C.dim}└${line}┘${C.reset}`);
+  p(`${C.orange}├${line}┤${C.reset}`);
+  const tip = '● 팁 — 번호 누르면 바로 실행돼요';
+  p(row(tip, `${C.orange}●${C.reset} ${C.dim}팁 — 번호 누르면 바로 실행돼요${C.reset}`, WIDTH));
+  p(`${C.orange}╰${line}╯${C.reset}`);
 }
 
 // drawCard가 그리는 줄 순서(0-index, vPad 이후 기준):
-// 0 상단테두리 1 공백 2..7 배너+그림자(6줄) 8 공백 9..(9+CONTENT_ROWS-1) 내용 (+1) 공백
+// 0 상단테두리 1 공백 2..7 배너+그림자(6줄) 8 태그라인 9 공백 10..(10+CONTENT_ROWS-1) 내용 (+1) 공백
 // (+1) 입력박스상단 (+1) 입력줄 (+1) 입력박스하단 (+1) 공백 (+1) 구분선 (+1) 팁 (+1) 하단테두리
 // drawCard 종료 직후(마지막 console.log의 개행 포함) 커서는 CARD_HEIGHT번째 줄에 있음
 // CONTENT_ROWS를 바꿔도 아래 값들이 자동으로 맞춰짐
-const CONTENT_FIRST_INDEX = 9;
+const CONTENT_FIRST_INDEX = 10;
 const INPUT_ROW_INDEX = CONTENT_FIRST_INDEX + CONTENT_ROWS + 2;
 const CARD_HEIGHT = CONTENT_FIRST_INDEX + CONTENT_ROWS + 8;
 const RESTING_INDEX = CARD_HEIGHT;
