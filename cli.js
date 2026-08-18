@@ -40,158 +40,82 @@ function ensureCreds({ gemini = true, account = true } = {}) {
   if (missing.length) throw new Error(`설정 안 됨: ${missing.join(', ')} — "설정" 메뉴에서 먼저 입력해줘`);
 }
 
+function todayKST() {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0];
+}
+
+const TTY = process.stdout.isTTY && process.stdin.isTTY;
+
+// TTY일 땐 raw keypress로만 입력받음(아래 readKey/readLine), readline Interface(cooked mode)는
+// 절대 같이 안 씀 — 둘을 섞으면 내부 버퍼가 겹쳐서 입력이 다음 프롬프트로 새는 버그가 있었음.
+// !TTY(파이프 입력 등)일 때만 이 cooked interface를 씀.
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q) => rl.question(q);
-if (process.stdin.isTTY) emitKeypressEvents(process.stdin, rl);
+if (TTY) emitKeypressEvents(process.stdin);
 
-// 메뉴 번호는 raw keypress로 즉시 받음 (엔터 필요 없음, Claude Code류 TUI 방식)
+// 단일 키 입력 (raw mode) — validKeys가 null이면 아무 키나 허용
 function readKey(validKeys) {
-  const TTY_IN = process.stdin.isTTY;
-  if (!TTY_IN) return ask('').then(s => s.trim());
+  if (!TTY) return ask('').then(s => s.trim());
   return new Promise((resolve) => {
-    rl.pause();
     process.stdin.setRawMode(true);
     process.stdin.resume();
     const onKeypress = (str, key) => {
       if (key?.ctrl && key.name === 'c') { cleanup(); process.exit(0); }
-      if (str && validKeys.includes(str)) { cleanup(); resolve(str); }
+      if (!str) return;
+      if (validKeys === null || validKeys.includes(str)) { cleanup(); resolve(str); }
     };
     function cleanup() {
       process.stdin.removeListener('keypress', onKeypress);
       if (!process.stdin.destroyed) process.stdin.setRawMode(false);
-      try { rl.resume(); } catch {}
     }
     process.stdin.on('keypress', onKeypress);
   });
 }
 
-function todayKST() {
-  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().split('T')[0];
-}
-
-async function doSettings() {
-  console.log('\n엔터 = 기존 값 유지\n');
-
-  console.log(`GEMINI_API_KEY 현재: ${mask(process.env.GEMINI_API_KEY)}`);
-  const gemini = (await ask('새 GEMINI_API_KEY: ')).trim();
-  if (gemini) upsertEnvValue('GEMINI_API_KEY', gemini);
-
-  console.log(`\nEMAIL 현재: ${mask(EMAIL)}`);
-  const email = (await ask('새 뉴로우 EMAIL: ')).trim();
-  if (email) { upsertEnvValue('EMAIL', email); EMAIL = email; }
-
-  console.log(`\nPASSWORD 현재: ${mask(PASSWORD)}`);
-  const password = (await ask('새 뉴로우 PASSWORD: ')).trim();
-  if (password) { upsertEnvValue('PASSWORD', password); PASSWORD = password; }
-
-  const isHeadless = process.env.HEADLESS !== 'false';
-  console.log(`\n브라우저 창 표시 현재: ${isHeadless ? '숨김' : '보임'}`);
-  const headless = (await ask('브라우저 창 보이게 할까? (y/n, 엔터=유지): ')).trim().toLowerCase();
-  if (headless === 'y' || headless === 'yes') upsertEnvValue('HEADLESS', 'false');
-  else if (headless === 'n' || headless === 'no') upsertEnvValue('HEADLESS', 'true');
-
-  console.log('\n✅ 저장 완료 (.env)');
-}
-
-async function doReflect() {
-  ensureCreds();
-  const dateInput = (await ask('날짜 (엔터=오늘, YYYY-MM-DD): ')).trim();
-  const date = dateInput || null;
-
-  const topicInput = (await ask('주제 (엔터=AI 자동 추천): ')).trim();
-  const topic = topicInput || await generateTopic(getRecentTopics());
-  console.log(`📌 주제: ${topic}`);
-
-  const textInput = (await ask('내용 (엔터=AI 자동 작성): ')).trim();
-  const text = textInput || await generateReflection(topic);
-  console.log(`📝 내용: ${text.slice(0, 80)}...\n`);
-
-  let result;
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      result = await submitReflection(
-        text, EMAIL, PASSWORD, topic, date,
-        async (step) => console.log(`[진행] ${step}`),
-        async (msg) => console.warn(`[경고] ${msg}`),
-      );
-      break;
-    } catch (err) {
-      if (attempt === 2) throw err;
-      console.warn(`⚠️ 1차 시도 실패 — 재시도: ${err.message}`);
-      await new Promise(r => setTimeout(r, 3000));
+// 한 줄 텍스트 입력 (raw mode 직접 구현 — backspace/한글 지원, Enter로 확정)
+function readLine() {
+  if (!TTY) return ask('').then(s => s.trim());
+  return new Promise((resolve) => {
+    let buf = '';
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    const onKeypress = (str, key) => {
+      if (key?.ctrl && key.name === 'c') { cleanup(); process.exit(0); }
+      if (key?.name === 'return' || str === '\r' || str === '\n') {
+        cleanup();
+        process.stdout.write('\n');
+        resolve(buf.trim());
+        return;
+      }
+      if (key?.name === 'backspace' || str === '\x7f' || str === '\b') {
+        if (buf.length > 0) {
+          const last = buf[buf.length - 1];
+          buf = buf.slice(0, -1);
+          const w = vwidth(last);
+          process.stdout.write('\b'.repeat(w) + ' '.repeat(w) + '\b'.repeat(w));
+        }
+        return;
+      }
+      if (str && !key?.ctrl && !key?.meta && str.charCodeAt(0) >= 0x20) {
+        buf += str;
+        process.stdout.write(str);
+      }
+    };
+    function cleanup() {
+      process.stdin.removeListener('keypress', onKeypress);
+      if (!process.stdin.destroyed) process.stdin.setRawMode(false);
     }
-  }
-
-  const dateLabel = date ?? todayKST();
-  if (result !== 'already_done') {
-    addSubmissionHistory(dateLabel, topic, text);
-    addRecentTopic(topic);
-  }
-  console.log(result === 'already_done' ? '✅ 이미 완료됨' : '✅ 회고 제출 완료');
+    process.stdin.on('keypress', onKeypress);
+  });
 }
-
-async function doReset() {
-  ensureCreds({ gemini: false });
-  const dateInput = (await ask('초기화할 날짜 (엔터=오늘): ')).trim();
-  const dateLabel = dateInput || todayKST();
-  const result = await resetReflection(EMAIL, PASSWORD, dateLabel);
-  removeSubmissionHistory(result.date);
-  console.log(`✅ ${result.date} 초기화 완료`);
-}
-
-async function doTasks() {
-  ensureCreds({ gemini: false });
-  const { tasks } = await getTasksWithToken(EMAIL, PASSWORD);
-  if (!tasks.length) { console.log('할일 없음'); return; }
-  tasks.forEach((t, i) => console.log(`${i + 1}. [id=${t.id ?? t.taskId}] ${t.title ?? t.taskTitle ?? t.name}`));
-}
-
-async function doTaskAdd() {
-  ensureCreds({ gemini: false });
-  const title = (await ask('할일 제목: ')).trim();
-  if (!title) { console.log('취소됨'); return; }
-  const { status, taskId } = await browserCreateTask(EMAIL, PASSWORD, title);
-  console.log(`status=${status} taskId=${taskId ?? '(응답에 없음, 할일 목록에서 확인)'}`);
-}
-
-async function doSchedule() {
-  ensureCreds({ gemini: false });
-  const taskId = (await ask('taskId: ')).trim();
-  const startISO = (await ask('시작 (YYYY-MM-DDTHH:mm:00): ')).trim();
-  const endISO = (await ask('종료 (YYYY-MM-DDTHH:mm:00): ')).trim();
-  if (!taskId || !startISO || !endISO) { console.log('취소됨'); return; }
-  const { status } = await browserCreateSchedule(EMAIL, PASSWORD, taskId, startISO, endISO);
-  console.log(`status=${status}`);
-}
-
-async function doTopics() {
-  ensureCreds({ account: false });
-  const result = await generateWithRetry(
-    '개발을 막 배우기 시작한 고등학생의 전공 학습을 주제로 뉴로우 회고에 쓸 만한 구체적인 주제 3개를 추천해줘.\n' +
-    '번호 없이 한 줄씩, 25자 이내, 한국어만',
-    30_000,
-  );
-  console.log(result.response.text().trim());
-}
-
-const MENU = [
-  { label: '오늘 회고 하기', run: doReflect },
-  { label: '회고 초기화', run: doReset },
-  { label: '할일 목록 보기', run: doTasks },
-  { label: '할일 추가', run: doTaskAdd },
-  { label: '일정 등록', run: doSchedule },
-  { label: '주제 추천만 보기', run: doTopics },
-  { label: '설정 (API 키 / 계정)', run: doSettings },
-];
 
 // ── 터미널 UI (ANSI 컬러 + 박스, 전체화면 배경) ──
-const TTY = process.stdout.isTTY;
 // C.reset은 fg/bold만 끔 (bg 유지) — 화면 전체를 한 배경색으로 깔기 위함
 const C = TTY ? {
   reset: '\x1b[39;22m', bold: '\x1b[1m',
-  orange: '\x1b[38;5;209m', green: '\x1b[38;5;114m',
+  orange: '\x1b[38;5;209m', green: '\x1b[38;5;114m', red: '\x1b[38;5;203m',
   gray: '\x1b[38;5;242m', dim: '\x1b[38;5;238m', light: '\x1b[38;5;253m',
-} : { reset: '', bold: '', orange: '', green: '', gray: '', dim: '', light: '' };
+} : { reset: '', bold: '', orange: '', green: '', red: '', gray: '', dim: '', light: '' };
 const BG = TTY ? '\x1b[48;5;233m' : '';
 const FULL_RESET = TTY ? '\x1b[0m' : '';
 
@@ -212,12 +136,6 @@ function center(plainText, coloredText, width) {
   return `${C.dim}│${C.reset} ${' '.repeat(left)}${coloredText}${' '.repeat(right)} ${C.dim}│${C.reset}`;
 }
 
-function innerRow(text, coloredText, innerWidth) {
-  const pad = ' '.repeat(Math.max(innerWidth - vwidth(text), 0));
-  return { plain: `│ ${text}${pad} │`, colored: `${C.dim}│${C.reset} ${coloredText}${pad} ${C.dim}│${C.reset}` };
-}
-
-// 전체 화면을 배경색으로 깔고, 그 위에 카드를 가운데 정렬해서 그림
 function fillScreen() {
   if (!TTY) return;
   const term = process.stdout.columns || 80;
@@ -227,27 +145,39 @@ function fillScreen() {
   buf += '\x1b[H';
   process.stdout.write(buf);
 }
-function screenCenter(coloredText, plainWidth) {
+function screenLine(coloredText, plainWidth) {
   const term = process.stdout.columns || 80;
   const left = Math.max(Math.floor((term - plainWidth) / 2), 0);
   const right = Math.max(term - plainWidth - left, 0);
-  console.log(`${BG}${' '.repeat(left)}${coloredText}${' '.repeat(right)}${FULL_RESET}`);
+  return `${BG}${' '.repeat(left)}${coloredText}${' '.repeat(right)}${FULL_RESET}`;
+}
+function screenCenter(coloredText, plainWidth) {
+  console.log(screenLine(coloredText, plainWidth));
 }
 
 const WIDTH = 50;
 const CARD_WIDTH = WIDTH + 4;
-
 const INNER_WIDTH = WIDTH - 6; // 바깥 여백 2칸씩 + 안쪽 박스 테두리 2칸
+const CONTENT_ROWS = 8; // 카드 내용 영역 줄 수 — 모든 화면이 이 높이로 고정돼야 커서 이동 계산이 일정함
 
-// 카드 상단(타이틀 + 전체 메뉴 목록)까지 그리고, 입력 박스는 열어둔 채로 반환
-// (입력 박스 안에서 바로 readline으로 받기 위해 박스를 닫지 않음)
-const CARD_HEIGHT = 22; // printMenuTop(17줄) + printMenuBottom(5줄)
+function padContentRows(lines) {
+  const out = lines.slice(0, CONTENT_ROWS);
+  while (out.length < CONTENT_ROWS) out.push(row('', '', WIDTH));
+  return out;
+}
+function contentRow(plainText, coloredText) {
+  return row(`  ${plainText}`, `  ${coloredText}`, WIDTH);
+}
+function blankContentRow() {
+  return row('', '', WIDTH);
+}
 
-function printMenuTop() {
+// 카드 전체 그리기: contentLines(최대 CONTENT_ROWS줄) + 입력/상태 박스(placeholder)
+// 구조가 항상 동일해야 ROWS_BELOW_INPUT / CONTENT_TOP_OFFSET 같은 상대 커서 이동이 맞음
+function drawCard(contentLines, placeholder) {
   fillScreen();
   const line = '─'.repeat(WIDTH + 2);
   const p = (cardLine) => screenCenter(cardLine, CARD_WIDTH);
-
   const rows = process.stdout.rows || 24;
   const vPad = Math.max(Math.floor((rows - CARD_HEIGHT) / 2), 0);
   for (let i = 0; i < vPad; i++) screenCenter('', 0);
@@ -259,68 +189,270 @@ function printMenuTop() {
   p(center('AUTO-NEWRROW CLI', `${C.bold}${C.orange}AUTO-NEWRROW${C.reset} ${C.bold}${C.light}CLI${C.reset}`, WIDTH));
   p(row('', '', WIDTH));
 
-  MENU.forEach((m, i) => {
-    const color = i === 0 ? C.green : C.light;
-    p(row(`  ${i + 1}. ${m.label}`, `  ${C.gray}${i + 1}.${C.reset} ${color}${m.label}${C.reset}`, WIDTH));
-  });
-  p(row(`  0. 종료`, `  ${C.gray}0.${C.reset} ${C.light}종료${C.reset}`, WIDTH));
+  padContentRows(contentLines).forEach(l => p(l));
   p(row('', '', WIDTH));
 
   const innerLine = '─'.repeat(INNER_WIDTH + 2);
   p(row(`  ┌${innerLine}┐`, `  ${C.dim}┌${innerLine}┐${C.reset}`, WIDTH));
-
-  // 입력 줄 — 왼쪽 오렌지 악센트바(┃) + placeholder. 실제 입력은 커서를 이 자리로
-  // 되돌려서 raw keypress로 받음 (captureMenuChoice)
-  const placeholder = '번호 선택 (0=종료)';
   const pad = ' '.repeat(Math.max(INNER_WIDTH - vwidth(placeholder), 0));
   const plainInput = `  │ ${placeholder}${pad} │`;
   const coloredInput = `  ${C.orange}┃${C.reset} ${C.dim}${placeholder}${C.reset}${pad} ${C.dim}│${C.reset}`;
   p(row(plainInput, coloredInput, WIDTH));
-
   p(row(`  └${innerLine}┘`, `  ${C.dim}└${innerLine}┘${C.reset}`, WIDTH));
   p(row('', '', WIDTH));
+
   p(`${C.dim}├${line}┤${C.reset}`);
   const tip = '● 뉴로우 회고 자동화 · Gemini';
   p(row(tip, `${C.orange}●${C.reset} ${C.dim}뉴로우 회고 자동화 · Gemini${C.reset}`, WIDTH));
   p(`${C.dim}└${line}┘${C.reset}`);
 }
 
-// 입력 줄로 커서를 되돌려 raw keypress로 번호를 받고, 그 자리에 선택 결과를 다시 그림
-const ROWS_BELOW_INPUT = 6; // 입력줄 다음에 그려진 5줄(박스하단/공백/구분선/팁/외곽하단) + 마지막 console.log가 만든 개행 1줄
-async function captureMenuChoice() {
+// drawCard가 그리는 줄 순서(0-index, vPad 이후 기준):
+// 0 상단테두리 1 공백 2 라벨 3 타이틀 4 공백 5..12 내용(8줄) 13 공백
+// 14 입력박스상단 15 입력줄 16 입력박스하단 17 공백 18 구분선 19 팁 20 하단테두리
+// drawCard 종료 직후(마지막 console.log의 개행 포함) 커서는 21번째 줄(인덱스21)에 있음
+const CARD_HEIGHT = 21;
+const RESTING_INDEX = 21;
+const INPUT_ROW_INDEX = 15;
+const CONTENT_FIRST_INDEX = 5;
+const ROWS_BELOW_INPUT = RESTING_INDEX - INPUT_ROW_INDEX; // 6
+const CONTENT_TOP_OFFSET = RESTING_INDEX - CONTENT_FIRST_INDEX; // 16
+
+function inputCol() {
   const term = process.stdout.columns || 80;
   const leftPad = Math.max(Math.floor((term - CARD_WIDTH) / 2), 0);
-  const col = leftPad + 2 /* │+space */ + 2 /* 들여쓰기 */ + 2 /* ┃+space */ + 1;
-  if (TTY) process.stdout.write(`\x1b[${ROWS_BELOW_INPUT}A\x1b[${col}G`);
+  return leftPad + 2 /* │+space */ + 2 /* 들여쓰기 */ + 2 /* ┃+space */ + 1;
+}
 
-  const validKeys = MENU.map((_, i) => String(i + 1)).concat('0');
+// 카드 내용 영역만 라이브 갱신 (자동화 진행 로그처럼 반복적으로 바뀌는 화면용)
+function updateContent(contentLines) {
+  if (!TTY) return;
+  const padded = padContentRows(contentLines);
+  process.stdout.write(`\x1b[${CONTENT_TOP_OFFSET}A`);
+  padded.forEach((l, i) => {
+    process.stdout.write(`\r${screenLine(l, CARD_WIDTH)}\x1b[K`);
+    if (i < padded.length - 1) process.stdout.write('\n');
+  });
+  process.stdout.write(`\x1b[${CONTENT_TOP_OFFSET - (CONTENT_ROWS - 1)}B\r`);
+}
+
+// 카드 하단 입력박스로 커서를 옮겨 raw keypress로 번호 하나 받고, 그 자리에 선택 결과 표시
+async function cardChoice(contentLines, placeholder, validKeys) {
+  drawCard(contentLines, placeholder);
+  if (TTY) process.stdout.write(`\x1b[${ROWS_BELOW_INPUT}A\x1b[${inputCol()}G`);
   const choice = await readKey(validKeys);
-
   if (TTY) {
-    const item = MENU[Number(choice) - 1];
-    const label = choice === '0' ? '종료' : (item ? item.label : '잘못된 입력');
-    const confirmPlain = `${choice}. ${label}`;
-    const confirmPad = ' '.repeat(Math.max(INNER_WIDTH - vwidth(confirmPlain), 0));
-    process.stdout.write(`\x1b[${col}G${C.bold}${C.green}${confirmPlain}${C.reset}${confirmPad}`);
+    const confirmPad = ' '.repeat(Math.max(INNER_WIDTH - vwidth(choice), 0));
+    process.stdout.write(`\x1b[${inputCol()}G${C.bold}${C.green}${choice}${C.reset}${confirmPad}`);
     process.stdout.write(`\x1b[${ROWS_BELOW_INPUT}B\r`);
   }
   return choice;
 }
 
+// 카드 하단 입력박스로 커서를 옮겨 일반 텍스트를 받음 (줄 편집 가능, Enter로 종료)
+async function cardAsk(contentLines, placeholder) {
+  drawCard(contentLines, placeholder);
+  if (TTY) process.stdout.write(`\x1b[${ROWS_BELOW_INPUT}A\x1b[${inputCol()}G`);
+  const value = await readLine();
+  if (TTY) process.stdout.write(`\x1b[${ROWS_BELOW_INPUT - 1}B\r`); // Enter가 이미 개행 1줄 만듦
+  return value;
+}
+
+// 상태만 보여주고 아무 키나 눌러야 넘어가는 화면
+async function cardWait(contentLines, placeholder = '아무 키나 눌러 메뉴로 돌아가기') {
+  drawCard(contentLines, placeholder);
+  if (TTY) await readKey(null);
+}
+
+function textLine(label, value, color = C.light) {
+  return contentRow(`${label}: ${value}`, `${C.gray}${label}:${C.reset} ${color}${value}${C.reset}`);
+}
+function errorLines(err) {
+  const msg = (err?.message ?? String(err)).slice(0, 200);
+  return [contentRow('오류', `${C.red}❌ 오류${C.reset}`), blankContentRow(), contentRow(msg, `${C.light}${msg}${C.reset}`)];
+}
+
+// ── 각 기능 ──
+
+async function doSettings() {
+  const currentLines = () => [
+    textLine('GEMINI_API_KEY', mask(process.env.GEMINI_API_KEY)),
+    textLine('EMAIL', mask(EMAIL)),
+    textLine('PASSWORD', mask(PASSWORD)),
+    textLine('HEADLESS', process.env.HEADLESS !== 'false' ? '숨김' : '보임'),
+    blankContentRow(),
+    contentRow('엔터만 치면 값 유지', `${C.dim}엔터만 치면 값 유지${C.reset}`),
+  ];
+
+  const gemini = await cardAsk(currentLines(), '새 GEMINI_API_KEY (엔터=유지)');
+  if (gemini) upsertEnvValue('GEMINI_API_KEY', gemini);
+
+  const email = await cardAsk(currentLines(), '새 뉴로우 EMAIL (엔터=유지)');
+  if (email) { upsertEnvValue('EMAIL', email); EMAIL = email; }
+
+  const password = await cardAsk(currentLines(), '새 뉴로우 PASSWORD (엔터=유지)');
+  if (password) { upsertEnvValue('PASSWORD', password); PASSWORD = password; }
+
+  const headless = (await cardAsk(currentLines(), '브라우저 창 보이게? y/n (엔터=유지)')).toLowerCase();
+  if (headless === 'y' || headless === 'yes') upsertEnvValue('HEADLESS', 'false');
+  else if (headless === 'n' || headless === 'no') upsertEnvValue('HEADLESS', 'true');
+
+  await cardWait([
+    contentRow('✅ 저장 완료', `${C.green}✅ 저장 완료${C.reset}`),
+    blankContentRow(),
+    ...currentLines(),
+  ]);
+}
+
+async function doReflect() {
+  ensureCreds();
+
+  const date = await cardAsk([contentRow('오늘 회고 작성', `${C.bold}오늘 회고 작성${C.reset}`)], '날짜 (엔터=오늘, YYYY-MM-DD)') || null;
+
+  let topic = await cardAsk([textLine('날짜', date ?? '오늘')], '주제 (엔터=AI 자동 추천)');
+  if (!topic) {
+    drawCard([textLine('날짜', date ?? '오늘')], 'AI가 주제 생성 중...');
+    topic = await generateTopic(getRecentTopics());
+  }
+
+  let text = await cardAsk([textLine('날짜', date ?? '오늘'), textLine('주제', topic)], '내용 (엔터=AI 자동 작성)');
+  if (!text) {
+    drawCard([textLine('날짜', date ?? '오늘'), textLine('주제', topic)], 'AI가 내용 작성 중...');
+    text = await generateReflection(topic);
+  }
+
+  const log = [];
+  const pushLog = (l) => { log.push(l); if (log.length > CONTENT_ROWS) log.shift(); };
+  const renderLog = () => log.map(l => contentRow(l, `${C.light}${l}${C.reset}`));
+
+  pushLog(`📌 ${topic}`);
+  drawCard(renderLog(), '자동화 진행 중...');
+
+  let result;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      result = await submitReflection(
+        text, EMAIL, PASSWORD, topic, date,
+        async (step) => { pushLog(`▸ ${step}`); updateContent(renderLog()); },
+        async (msg) => { pushLog(`⚠ ${msg}`); updateContent(renderLog()); },
+      );
+      break;
+    } catch (err) {
+      if (attempt === 2) throw err;
+      pushLog(`⚠ 1차 시도 실패 — 재시도: ${err.message.slice(0, 40)}`);
+      updateContent(renderLog());
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+
+  const dateLabel = date ?? todayKST();
+  if (result !== 'already_done') {
+    addSubmissionHistory(dateLabel, topic, text);
+    addRecentTopic(topic);
+  }
+  await cardWait([
+    contentRow(result === 'already_done' ? '이미 완료됨' : '회고 완료', `${C.green}✅ ${result === 'already_done' ? '이미 완료됨' : '회고 완료'}${C.reset}`),
+    blankContentRow(),
+    textLine('날짜', dateLabel),
+    textLine('주제', topic),
+  ]);
+}
+
+async function doReset() {
+  ensureCreds({ gemini: false });
+  const dateLabel = (await cardAsk([contentRow('회고 초기화', `${C.bold}회고 초기화${C.reset}`)], '초기화할 날짜 (엔터=오늘)')) || todayKST();
+  drawCard([textLine('날짜', dateLabel)], '초기화 중...');
+  const result = await resetReflection(EMAIL, PASSWORD, dateLabel);
+  removeSubmissionHistory(result.date);
+  await cardWait([contentRow('초기화 완료', `${C.green}✅ ${result.date} 초기화 완료${C.reset}`)]);
+}
+
+async function doTasks() {
+  ensureCreds({ gemini: false });
+  drawCard([], '할일 불러오는 중...');
+  const { tasks } = await getTasksWithToken(EMAIL, PASSWORD);
+  const lines = tasks.length
+    ? tasks.slice(0, CONTENT_ROWS).map((t, i) => contentRow(`${i + 1}. ${t.title ?? t.taskTitle ?? t.name}`, `${C.gray}${i + 1}.${C.reset} ${C.light}${t.title ?? t.taskTitle ?? t.name}${C.reset}`))
+    : [contentRow('할일 없음', `${C.dim}할일 없음${C.reset}`)];
+  await cardWait(lines);
+}
+
+async function doTaskAdd() {
+  ensureCreds({ gemini: false });
+  const title = await cardAsk([contentRow('할일 추가', `${C.bold}할일 추가${C.reset}`)], '할일 제목');
+  if (!title) return;
+  drawCard([textLine('제목', title)], '추가 중...');
+  const { status, taskId } = await browserCreateTask(EMAIL, PASSWORD, title);
+  await cardWait([
+    contentRow('추가 완료', `${C.green}✅ status=${status}${C.reset}`),
+    textLine('taskId', taskId ?? '(할일 목록에서 확인)'),
+  ]);
+}
+
+async function doSchedule() {
+  ensureCreds({ gemini: false });
+  const taskId = await cardAsk([contentRow('일정 등록', `${C.bold}일정 등록${C.reset}`)], 'taskId');
+  if (!taskId) return;
+  const startISO = await cardAsk([textLine('taskId', taskId)], '시작 (YYYY-MM-DDTHH:mm:00)');
+  if (!startISO) return;
+  const endISO = await cardAsk([textLine('taskId', taskId), textLine('시작', startISO)], '종료 (YYYY-MM-DDTHH:mm:00)');
+  if (!endISO) return;
+  drawCard([textLine('taskId', taskId), textLine('시작', startISO), textLine('종료', endISO)], '등록 중...');
+  const { status } = await browserCreateSchedule(EMAIL, PASSWORD, taskId, startISO, endISO);
+  await cardWait([contentRow('등록 완료', `${C.green}✅ status=${status}${C.reset}`)]);
+}
+
+async function doTopics() {
+  ensureCreds({ account: false });
+  drawCard([], 'AI가 주제 추천 생성 중...');
+  const result = await generateWithRetry(
+    '개발을 막 배우기 시작한 고등학생의 전공 학습을 주제로 뉴로우 회고에 쓸 만한 구체적인 주제 3개를 추천해줘.\n' +
+    '번호 없이 한 줄씩, 25자 이내, 한국어만',
+    30_000,
+  );
+  const topics = result.response.text().trim().split('\n').filter(Boolean);
+  await cardWait(topics.map((t, i) => contentRow(`${i + 1}. ${t}`, `${C.light}${i + 1}. ${t}${C.reset}`)));
+}
+
+const MENU = [
+  { label: '오늘 회고 하기', run: doReflect },
+  { label: '회고 초기화', run: doReset },
+  { label: '할일 목록 보기', run: doTasks },
+  { label: '할일 추가', run: doTaskAdd },
+  { label: '일정 등록', run: doSchedule },
+  { label: '주제 추천만 보기', run: doTopics },
+  { label: '설정 (API 키 / 계정)', run: doSettings },
+];
+
+function menuContentLines() {
+  return [
+    ...MENU.map((m, i) => contentRow(`${i + 1}. ${m.label}`, `${C.gray}${i + 1}.${C.reset} ${i === 0 ? C.green : C.light}${m.label}${C.reset}`)),
+    contentRow('0. 종료', `${C.gray}0.${C.reset} ${C.light}종료${C.reset}`),
+  ];
+}
+
 async function main() {
   while (true) {
-    printMenuTop();
-    const choice = await captureMenuChoice();
+    let choice;
+    try {
+      const validKeys = MENU.map((_, i) => String(i + 1)).concat('0');
+      choice = await cardChoice(menuContentLines(), '번호 선택 (0=종료)', validKeys);
+    } catch {
+      break; // 입력 스트림이 끊기면 그냥 종료
+    }
     if (choice === '0') break;
     const item = MENU[Number(choice) - 1];
-    if (!item) { console.log('잘못된 입력'); continue; }
-    if (TTY) console.log(`${FULL_RESET}`);
+    if (!item) continue;
     try {
       await item.run();
     } catch (err) {
-      console.error('❌', err.message);
+      try {
+        await cardWait(errorLines(err));
+      } catch {
+        console.error('❌', err.message);
+        break;
+      }
     }
-    await ask(`\n${C.dim}엔터를 누르면 메뉴로 돌아감...${C.reset}`);
   }
   rl.close();
   process.exit(0);
