@@ -50,10 +50,11 @@ function todayKST() {
 
 const TTY = process.stdout.isTTY && process.stdin.isTTY;
 
-// TTY일 땐 raw keypress로만 입력받음(아래 readKey/readLine), readline Interface(cooked mode)는
-// 절대 같이 안 씀 — 둘을 섞으면 내부 버퍼가 겹쳐서 입력이 다음 프롬프트로 새는 버그가 있었음.
-// !TTY(파이프 입력 등)일 때만 이 cooked interface를 씀.
-const rl = createInterface({ input: process.stdin, output: process.stdout });
+// TTY일 땐 raw keypress로만 입력받음(아래 readKey/readLine) — readline Interface는 아예 안 만듦.
+// createInterface()는 만들어두기만 해도 내부적으로 같은 stdin에 자기 keypress 리스너를
+// 붙여서 몰래 자기만의 입력 버퍼를 쌓아두고, 나중에(resize 등으로) 그 버퍼를 프롬프트
+// 스타일로 다시 그리면서 화면을 덮어써버리는 문제가 있었음. !TTY(파이프 입력)일 때만 생성.
+const rl = TTY ? null : createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q) => rl.question(q);
 if (TTY) emitKeypressEvents(process.stdin);
 
@@ -89,6 +90,14 @@ function readLine() {
     let buf = '';
     process.stdin.setRawMode(true);
     process.stdin.resume();
+    // 커서 이동+부분 지우기(\b 등) 조합은 일부 터미널(macOS 기본 터미널 포함)에서
+    // 배경색 렌더링이 깨지는 문제가 있었음 — 매 키 입력마다 입력줄 전체를 고정폭으로
+    // 통째로 다시 그리는 방식으로 교체 (버그 재현 안 되던 원격 테스트와 달리 실기기에서
+    // 재현됐던 문제라 확실한 방식으로 바꿈)
+    function redraw() {
+      const pad = ' '.repeat(Math.max(INNER_WIDTH - vwidth(buf), 0));
+      process.stdout.write(`\x1b[${inputCol()}G${BG}${C.light}${buf}${FULL_RESET}${BG}${pad}${FULL_RESET}\x1b[${pad.length}D`);
+    }
     const onKeypress = (str, key) => {
       if (key?.ctrl && key.name === 'c') { cleanup(); exitApp(); }
       if (key?.name === 'return' || str === '\r' || str === '\n') {
@@ -99,21 +108,16 @@ function readLine() {
       }
       if (key?.name === 'backspace' || key?.name === 'delete' || str === '\x7f' || str === '\b') {
         if (buf.length > 0) {
-          const last = buf[buf.length - 1];
           buf = buf.slice(0, -1);
-          const w = vwidth(last);
-          // raw \b(0x08) 대신 CSI 커서이동 사용 + 배경색 명시 — 그냥 \b로 지우면
-          // 커서 위치 SGR(배경색) 상태가 애매해져서 일부 터미널(macOS 기본 터미널 포함)에서
-          // 화면 일부가 엉뚱한 배경색으로 렌더링되는 문제가 있었음
-          process.stdout.write(`\x1b[${w}D${BG}${' '.repeat(w)}\x1b[${w}D${FULL_RESET}`);
+          redraw();
         }
         return;
       }
       // 방향키/esc/tab 등 이름 있는 특수키는 무시 (조각난 이스케이프 시퀀스가 글자로 새는 것 방지)
       if (key?.name && key.name.length > 1) return;
-      if (str && !key?.ctrl && !key?.meta && str.charCodeAt(0) >= 0x20) {
+      if (str && !key?.ctrl && !key?.meta && str.charCodeAt(0) >= 0x20 && vwidth(buf) + vwidth(str) <= INNER_WIDTH) {
         buf += str;
-        process.stdout.write(`${BG}${C.light}${str}${FULL_RESET}`);
+        redraw();
       }
     };
     function cleanup() {
@@ -507,7 +511,7 @@ async function main() {
       }
     }
   }
-  rl.close();
+  if (rl) rl.close();
   exitApp();
 }
 
