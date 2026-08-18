@@ -251,15 +251,30 @@ let WIDTH = 50;
 let CARD_WIDTH = WIDTH + 4;
 let INNER_WIDTH = WIDTH - 6;
 const BANNER_MIN_WIDTH = 68; // 그림자 포함 블록 배너("AUTO-NEWRROW")가 63칸 필요 — 카드 폭이 이보다 좁으면 안 됨
+// 헤더(0..CONTENT_FIRST_INDEX-1)는 배너 등 고정 구조라 안 바뀌지만, 내용 줄 수는
+// 터미널 높이에 맞춰 줄어들어야 함 — 안 그러면 작은 화면에서 카드가 화면보다 커져서
+// 위쪽(배너)이 잘려 보임
+const CONTENT_FIRST_INDEX = 10;
+const FIXED_TAIL_ROWS = 8; // 내용 이후: 공백+입력박스3줄+공백+구분선+팁+하단테두리
+let CONTENT_ROWS = 14;
+let INPUT_ROW_INDEX, CARD_HEIGHT, RESTING_INDEX, ROWS_BELOW_INPUT, CONTENT_TOP_OFFSET;
+
 function recomputeLayout() {
   const cols = process.stdout.columns || 80;
+  const rows = process.stdout.rows || 24;
   const target = Math.round(cols * 0.8);
   CARD_WIDTH = Math.max(BANNER_MIN_WIDTH, Math.min(target, cols - 4, 160));
   WIDTH = CARD_WIDTH - 4;
   INNER_WIDTH = WIDTH - 6; // 바깥 여백 2칸씩 + 안쪽 박스 테두리 2칸
-}
 
-const CONTENT_ROWS = 14; // 카드 내용 영역 줄 수 — 모든 화면이 이 높이로 고정돼야 커서 이동 계산이 일정함
+  const available = rows - CONTENT_FIRST_INDEX - FIXED_TAIL_ROWS;
+  CONTENT_ROWS = Math.max(4, Math.min(14, available));
+  INPUT_ROW_INDEX = CONTENT_FIRST_INDEX + CONTENT_ROWS + 2;
+  CARD_HEIGHT = CONTENT_FIRST_INDEX + CONTENT_ROWS + 8;
+  RESTING_INDEX = CARD_HEIGHT;
+  ROWS_BELOW_INPUT = RESTING_INDEX - INPUT_ROW_INDEX;
+  CONTENT_TOP_OFFSET = RESTING_INDEX - CONTENT_FIRST_INDEX;
+}
 
 // 내용 줄은 폭이 고정되기 전(WIDTH 미확정) 시점에 만들어질 수 있어서, 실제 패딩은
 // drawCard가 그릴 때(WIDTH 확정 후) 적용함 — {plain, colored} 형태로만 들고 있음
@@ -320,13 +335,7 @@ function drawCard(contentLines, placeholder) {
 // 0 상단테두리 1 공백 2..7 배너+그림자(6줄) 8 태그라인 9 공백 10..(10+CONTENT_ROWS-1) 내용 (+1) 공백
 // (+1) 입력박스상단 (+1) 입력줄 (+1) 입력박스하단 (+1) 공백 (+1) 구분선 (+1) 팁 (+1) 하단테두리
 // drawCard 종료 직후(마지막 console.log의 개행 포함) 커서는 CARD_HEIGHT번째 줄에 있음
-// CONTENT_ROWS를 바꿔도 아래 값들이 자동으로 맞춰짐
-const CONTENT_FIRST_INDEX = 10;
-const INPUT_ROW_INDEX = CONTENT_FIRST_INDEX + CONTENT_ROWS + 2;
-const CARD_HEIGHT = CONTENT_FIRST_INDEX + CONTENT_ROWS + 8;
-const RESTING_INDEX = CARD_HEIGHT;
-const ROWS_BELOW_INPUT = RESTING_INDEX - INPUT_ROW_INDEX;
-const CONTENT_TOP_OFFSET = RESTING_INDEX - CONTENT_FIRST_INDEX;
+// (CONTENT_ROWS/CARD_HEIGHT 등은 recomputeLayout()이 터미널 크기에 맞춰 매번 다시 계산함)
 
 function inputCol() {
   const term = process.stdout.columns || 80;
