@@ -58,8 +58,10 @@ function todayKST() {
 }
 
 const TTY = process.stdout.isTTY && process.stdin.isTTY;
-// 대체 화면 버퍼(vim/htop 방식) — 마우스 스크롤로 이전 프레임(스크롤백) 못 보게 막음
-if (TTY) process.stdout.write('\x1b[?1049h');
+// 대체 화면 버퍼(vim/htop 방식) — 마우스 스크롤로 이전 프레임(스크롤백) 못 보게 막음.
+// ?1049h만으론 일부 터미널(macOS 기본 터미널 포함)이 스크롤을 그냥 창 스크롤로
+// 흘려보내서, ?1007h(alternate scroll mode)도 같이 켜서 휠 스크롤을 화살표키로 바꿈
+if (TTY) process.stdout.write('\x1b[?1049h\x1b[?1007h');
 
 // TTY일 땐 raw keypress로만 입력받음(아래 readKey/readLine) — readline Interface는 아예 안 만듦.
 // createInterface()는 만들어두기만 해도 내부적으로 같은 stdin에 자기 keypress 리스너를
@@ -70,7 +72,7 @@ const ask = (q) => rl.question(q);
 if (TTY) emitKeypressEvents(process.stdin);
 
 function exitApp() {
-  if (TTY) process.stdout.write('\x1b[?1049l'); // 대체 화면 버퍼 나가기 — 원래 화면(스크롤백)으로 복귀
+  if (TTY) process.stdout.write('\x1b[?1007l\x1b[?1049l'); // 대체 화면 버퍼 나가기 — 원래 화면(스크롤백)으로 복귀
   console.log('👋 종료함');
   process.exit(0);
 }
@@ -595,13 +597,13 @@ async function main() {
 
 // 예상 못 한 에러로 죽을 때 화면 지우고 실제 에러 보여줌 (그냥 검게 멈춘 채 죽는 것 방지)
 process.on('uncaughtException', (err) => {
-  if (TTY) process.stdout.write('\x1b[?1049l\x1b[0m');
+  if (TTY) process.stdout.write('\x1b[?1007l\x1b[?1049l\x1b[0m');
   console.error('❌ 예상 못 한 오류로 종료됨:\n');
   console.error(err.stack || err);
   process.exit(1);
 });
 process.on('unhandledRejection', (err) => {
-  if (TTY) process.stdout.write('\x1b[?1049l\x1b[0m');
+  if (TTY) process.stdout.write('\x1b[?1007l\x1b[?1049l\x1b[0m');
   console.error('❌ 예상 못 한 오류로 종료됨:\n');
   console.error(err?.stack || err);
   process.exit(1);
