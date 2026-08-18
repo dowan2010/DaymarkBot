@@ -386,6 +386,8 @@ async function doReflect() {
   if (!text) {
     drawCard([textLine('날짜', date ?? '오늘'), textLine('주제', topic)], 'AI가 내용 작성 중...');
     text = await generateReflection(topic);
+    // 200자 미만이면 최대 2회 재시도 (뉴로우 회고는 200자 이상 요구)
+    for (let i = 0; i < 2 && text.length < 200; i++) text = await generateReflection(topic);
   }
 
   const log = [];
@@ -393,6 +395,7 @@ async function doReflect() {
   const renderLog = () => log.map(l => contentRow(l, `${C.light}${l}${C.reset}`));
 
   pushLog(`📌 ${topic}`);
+  pushLog(`📝 (${text.length}자) ${text.slice(0, 60)}${text.length > 60 ? '...' : ''}`);
   drawCard(renderLog(), '자동화 진행 중...');
 
   let result;

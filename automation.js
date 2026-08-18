@@ -676,6 +676,31 @@ export async function submitReflection(text, email, password, topic = '오늘의
 
     await dismissLoginPopup(page, silent);
 
+    // URL만으로는 SPA가 몇 초 뒤에 뒤늦게 클라이언트 사이드로 로그인 페이지로 리다이렉트하는 걸
+    // 못 잡을 수 있었음(실제로 그랬음) — 실제 페이지 제목(title)을 몇 초간 지켜보며 확실하게 재확인.
+    let sawLoginTitle = false;
+    for (let i = 0; i < 12; i++) {
+      await page.waitForTimeout(500);
+      const t = await page.title().catch(() => '');
+      if (t.includes('로그인')) { sawLoginTitle = true; break; }
+    }
+    if (sawLoginTitle) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await onWarning(`로그인 페이지 감지됨 — 재로그인 (${attempt + 1}/3)`);
+        await login(page, email, password, silent);
+        await page.goto(reflectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 15000 }).catch(() => {});
+        await dismissLoginPopup(page, silent);
+        const t2 = await page.title().catch(() => '');
+        if (!t2.includes('로그인')) break;
+        if (attempt === 2) {
+          await onWarning('로그인 페이지에서 벗어나지 못함');
+          throw new Error('로그인 실패 — 계속 로그인 페이지에 머무름');
+        }
+      }
+    }
+    await onProgress('로그인 확인됨');
+
     log('회고 페이지 URL:', page.url());
 
     // ── 진단: 현재 페이지 상태 출력 ──
