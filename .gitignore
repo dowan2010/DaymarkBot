@@ -12,3 +12,4 @@ test_*.js
 newrrow-chat.js
 .DS_Store
 .idea
+local-state.json
