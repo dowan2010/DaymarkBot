@@ -161,8 +161,8 @@ let CARD_WIDTH = WIDTH + 4;
 let INNER_WIDTH = WIDTH - 6;
 function recomputeLayout() {
   const cols = process.stdout.columns || 80;
-  const target = Math.round(cols * 0.55);
-  CARD_WIDTH = Math.max(54, Math.min(target, cols - 4, 100));
+  const target = Math.round(cols * 0.8);
+  CARD_WIDTH = Math.max(54, Math.min(target, cols - 4, 160));
   WIDTH = CARD_WIDTH - 4;
   INNER_WIDTH = WIDTH - 6; // 바깥 여백 2칸씩 + 안쪽 박스 테두리 2칸
 }
