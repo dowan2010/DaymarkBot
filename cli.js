@@ -145,13 +145,16 @@ const MENU = [
   { label: '설정 (API 키 / 계정)', run: doSettings },
 ];
 
-// ── 터미널 UI (ANSI 컬러 + 박스) ──
+// ── 터미널 UI (ANSI 컬러 + 박스, 전체화면 배경) ──
 const TTY = process.stdout.isTTY;
+// C.reset은 fg/bold만 끔 (bg 유지) — 화면 전체를 한 배경색으로 깔기 위함
 const C = TTY ? {
-  reset: '\x1b[0m', bold: '\x1b[1m',
+  reset: '\x1b[39;22m', bold: '\x1b[1m',
   orange: '\x1b[38;5;209m', green: '\x1b[38;5;114m',
   gray: '\x1b[38;5;242m', dim: '\x1b[38;5;238m', light: '\x1b[38;5;253m',
 } : { reset: '', bold: '', orange: '', green: '', gray: '', dim: '', light: '' };
+const BG = TTY ? '\x1b[48;5;233m' : '';
+const FULL_RESET = TTY ? '\x1b[0m' : '';
 
 function vwidth(s) {
   let w = 0;
@@ -175,23 +178,45 @@ function innerRow(text, coloredText, innerWidth) {
   return { plain: `│ ${text}${pad} │`, colored: `${C.dim}│${C.reset} ${coloredText}${pad} ${C.dim}│${C.reset}` };
 }
 
+// 전체 화면을 배경색으로 깔고, 그 위에 카드를 가운데 정렬해서 그림
+function fillScreen() {
+  if (!TTY) return;
+  const term = process.stdout.columns || 80;
+  const rows = process.stdout.rows || 24;
+  let buf = '\x1b[2J\x1b[H';
+  for (let i = 0; i < rows; i++) buf += `${BG}${' '.repeat(term)}${FULL_RESET}\n`;
+  buf += '\x1b[H';
+  process.stdout.write(buf);
+}
+function screenCenter(coloredText, plainWidth) {
+  const term = process.stdout.columns || 80;
+  const left = Math.max(Math.floor((term - plainWidth) / 2), 0);
+  const right = Math.max(term - plainWidth - left, 0);
+  console.log(`${BG}${' '.repeat(left)}${coloredText}${' '.repeat(right)}${FULL_RESET}`);
+}
+
+const WIDTH = 50;
+const CARD_WIDTH = WIDTH + 4;
+
 function printMenu() {
-  const WIDTH = 50;
+  fillScreen();
   const line = '─'.repeat(WIDTH + 2);
   const inner = WIDTH - 6; // 바깥 여백 2칸씩 + 안쪽 박스 테두리 2칸
   const innerLine = '─'.repeat(inner + 2);
+  const p = (cardLine) => screenCenter(cardLine, CARD_WIDTH);
 
-  console.log(`${C.dim}┌${line}┐${C.reset}`);
-  console.log(row('', '', WIDTH));
-  console.log(center('A U T O - N E W R R O W', `${C.gray}A U T O - N E W R R O W${C.reset}`, WIDTH));
-  console.log(center('AUTO-NEWRROW CLI', `${C.bold}${C.orange}AUTO-NEWRROW${C.reset} ${C.bold}${C.light}CLI${C.reset}`, WIDTH));
-  console.log(row('', '', WIDTH));
+  if (!TTY) console.log('');
+  p(`${C.dim}┌${line}┐${C.reset}`);
+  p(row('', '', WIDTH));
+  p(center('A U T O - N E W R R O W', `${C.gray}A U T O - N E W R R O W${C.reset}`, WIDTH));
+  p(center('AUTO-NEWRROW CLI', `${C.bold}${C.orange}AUTO-NEWRROW${C.reset} ${C.bold}${C.light}CLI${C.reset}`, WIDTH));
+  p(row('', '', WIDTH));
 
   // 안쪽 미니 터미널 프리뷰
-  console.log(row(`  ┌${innerLine}┐`, `  ${C.dim}┌${innerLine}┐${C.reset}`, WIDTH));
+  p(row(`  ┌${innerLine}┐`, `  ${C.dim}┌${innerLine}┐${C.reset}`, WIDTH));
   {
     const l1 = innerRow('Type a number... (0 to exit)', `${C.gray}Type a number... (0 to exit)${C.reset}`, inner);
-    console.log(row(`  ${l1.plain}`, `  ${l1.colored}`, WIDTH));
+    p(row(`  ${l1.plain}`, `  ${l1.colored}`, WIDTH));
   }
   {
     const left = `1. ${MENU[0].label}`;
@@ -200,10 +225,10 @@ function printMenu() {
     const plainInner = `${left}${' '.repeat(gap)}${right}`;
     const coloredInner = `${C.green}${left}${C.reset}${' '.repeat(gap)}${C.dim}${right}${C.reset}`;
     const l2 = innerRow(plainInner, coloredInner, inner);
-    console.log(row(`  ${l2.plain}`, `  ${l2.colored}`, WIDTH));
+    p(row(`  ${l2.plain}`, `  ${l2.colored}`, WIDTH));
   }
-  console.log(row(`  └${innerLine}┘`, `  ${C.dim}└${innerLine}┘${C.reset}`, WIDTH));
-  console.log(row('', '', WIDTH));
+  p(row(`  └${innerLine}┘`, `  ${C.dim}└${innerLine}┘${C.reset}`, WIDTH));
+  p(row('', '', WIDTH));
 
   // 축약 단축키 줄
   const shortLabels = ['1 회고', '2 초기화', '3 할일', '...', '0 종료'];
@@ -212,36 +237,41 @@ function printMenu() {
     const [num, ...rest] = s.split(' ');
     return /^\d$/.test(num) ? `${C.gray}${num}${C.reset} ${C.light}${rest.join(' ')}${C.reset}` : `${C.dim}${s}${C.reset}`;
   }).join('   ');
-  console.log(center(shortPlain, shortColored, WIDTH));
-  console.log(row('', '', WIDTH));
+  p(center(shortPlain, shortColored, WIDTH));
+  p(row('', '', WIDTH));
 
-  console.log(`${C.dim}├${line}┤${C.reset}`);
+  p(`${C.dim}├${line}┤${C.reset}`);
   const tip = '● 터미널 한 줄이면 오늘 회고 끝';
-  console.log(row(tip, `${C.orange}●${C.reset} ${C.dim}터미널 한 줄이면 오늘 회고 끝${C.reset}`, WIDTH));
-  console.log(`${C.dim}└${line}┘${C.reset}`);
+  p(row(tip, `${C.orange}●${C.reset} ${C.dim}터미널 한 줄이면 오늘 회고 끝${C.reset}`, WIDTH));
+  p(`${C.dim}└${line}┘${C.reset}`);
 
-  console.log('');
+  screenCenter('', 0);
   MENU.forEach((m, i) => {
     const color = i === 0 ? C.green : C.light;
-    console.log(`${C.gray}${i + 1}.${C.reset} ${color}${m.label}${C.reset}`);
+    const plain = `${i + 1}. ${m.label}`;
+    screenCenter(`${C.gray}${i + 1}.${C.reset} ${color}${m.label}${C.reset}`, vwidth(plain));
   });
-  console.log(`${C.gray}0.${C.reset} ${C.light}종료${C.reset}`);
+  screenCenter(`${C.gray}0.${C.reset} ${C.light}종료${C.reset}`, vwidth('0. 종료'));
+  screenCenter('', 0);
 }
 
 async function main() {
-  console.log(`\n${C.bold}${C.orange}📓 auto-newrrow CLI${C.reset}\n`);
   while (true) {
-    console.log('');
     printMenu();
-    const choice = (await ask(`\n${C.light}선택: ${C.reset}`)).trim();
+    const term = process.stdout.columns || 80;
+    const margin = Math.max(Math.floor((term - 20) / 2), 0);
+    if (TTY) process.stdout.write(`${BG}${' '.repeat(margin)}`);
+    const choice = (await ask(`${C.light}선택: ${C.reset}`)).trim();
     if (choice === '0') break;
     const item = MENU[Number(choice) - 1];
     if (!item) { console.log('잘못된 입력'); continue; }
+    if (TTY) console.log(`${FULL_RESET}`);
     try {
       await item.run();
     } catch (err) {
       console.error('❌', err.message);
     }
+    await ask(`\n${C.dim}엔터를 누르면 메뉴로 돌아감...${C.reset}`);
   }
   rl.close();
 }
