@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // auto-newrrow CLI — 뉴로우 회고 자동화 (터미널에서 직접 실행)
 // 실행: node cli.js
 // 최초 실행 시 "설정" 메뉴에서 GEMINI_API_KEY / EMAIL / PASSWORD 입력하면 .env에 저장됨

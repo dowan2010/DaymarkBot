@@ -17,6 +17,15 @@ npx playwright install chromium
 node cli.js
 ```
 
+전역 명령어로 쓰고 싶으면:
+
+```bash
+npm link
+newrrow
+```
+
+이후엔 터미널 아무 위치에서나 `newrrow`만 치면 실행됨.
+
 첫 실행 시 메뉴에서 **설정 (API 키 / 계정)** 선택 후 아래 값을 입력하면 `.env`에 저장됨.
 
 - `GEMINI_API_KEY` — Google AI Studio에서 발급
