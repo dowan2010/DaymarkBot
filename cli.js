@@ -186,7 +186,7 @@ function recomputeLayout() {
   INNER_WIDTH = WIDTH - 6; // 바깥 여백 2칸씩 + 안쪽 박스 테두리 2칸
 }
 
-const CONTENT_ROWS = 8; // 카드 내용 영역 줄 수 — 모든 화면이 이 높이로 고정돼야 커서 이동 계산이 일정함
+const CONTENT_ROWS = 14; // 카드 내용 영역 줄 수 — 모든 화면이 이 높이로 고정돼야 커서 이동 계산이 일정함
 
 // 내용 줄은 폭이 고정되기 전(WIDTH 미확정) 시점에 만들어질 수 있어서, 실제 패딩은
 // drawCard가 그릴 때(WIDTH 확정 후) 적용함 — {plain, colored} 형태로만 들고 있음
@@ -243,15 +243,16 @@ function drawCard(contentLines, placeholder) {
 }
 
 // drawCard가 그리는 줄 순서(0-index, vPad 이후 기준):
-// 0 상단테두리 1 공백 2 라벨 3 타이틀 4 공백 5..12 내용(8줄) 13 공백
-// 14 입력박스상단 15 입력줄 16 입력박스하단 17 공백 18 구분선 19 팁 20 하단테두리
-// drawCard 종료 직후(마지막 console.log의 개행 포함) 커서는 21번째 줄(인덱스21)에 있음
-const CARD_HEIGHT = 21;
-const RESTING_INDEX = 21;
-const INPUT_ROW_INDEX = 15;
+// 0 상단테두리 1 공백 2 라벨 3 타이틀 4 공백 5..(5+CONTENT_ROWS-1) 내용 (+1) 공백
+// (+1) 입력박스상단 (+1) 입력줄 (+1) 입력박스하단 (+1) 공백 (+1) 구분선 (+1) 팁 (+1) 하단테두리
+// drawCard 종료 직후(마지막 console.log의 개행 포함) 커서는 CARD_HEIGHT번째 줄에 있음
+// CONTENT_ROWS를 바꿔도 아래 값들이 자동으로 맞춰짐
 const CONTENT_FIRST_INDEX = 5;
-const ROWS_BELOW_INPUT = RESTING_INDEX - INPUT_ROW_INDEX; // 6
-const CONTENT_TOP_OFFSET = RESTING_INDEX - CONTENT_FIRST_INDEX; // 16
+const INPUT_ROW_INDEX = CONTENT_FIRST_INDEX + CONTENT_ROWS + 2;
+const CARD_HEIGHT = CONTENT_FIRST_INDEX + CONTENT_ROWS + 8;
+const RESTING_INDEX = CARD_HEIGHT;
+const ROWS_BELOW_INPUT = RESTING_INDEX - INPUT_ROW_INDEX;
+const CONTENT_TOP_OFFSET = RESTING_INDEX - CONTENT_FIRST_INDEX;
 
 function inputCol() {
   const term = process.stdout.columns || 80;
