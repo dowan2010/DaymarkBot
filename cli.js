@@ -84,6 +84,12 @@ async function doSettings() {
   const password = (await ask('새 뉴로우 PASSWORD: ')).trim();
   if (password) { upsertEnvValue('PASSWORD', password); PASSWORD = password; }
 
+  const isHeadless = process.env.HEADLESS !== 'false';
+  console.log(`\n브라우저 창 표시 현재: ${isHeadless ? '숨김' : '보임'}`);
+  const headless = (await ask('브라우저 창 보이게 할까? (y/n, 엔터=유지): ')).trim().toLowerCase();
+  if (headless === 'y' || headless === 'yes') upsertEnvValue('HEADLESS', 'false');
+  else if (headless === 'n' || headless === 'no') upsertEnvValue('HEADLESS', 'true');
+
   console.log('\n✅ 저장 완료 (.env)');
 }
 
