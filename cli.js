@@ -198,11 +198,13 @@ function screenCenter(coloredText, plainWidth) {
 const WIDTH = 50;
 const CARD_WIDTH = WIDTH + 4;
 
-function printMenu() {
+const INNER_WIDTH = WIDTH - 6; // 바깥 여백 2칸씩 + 안쪽 박스 테두리 2칸
+
+// 카드 상단(타이틀 + 전체 메뉴 목록)까지 그리고, 입력 박스는 열어둔 채로 반환
+// (입력 박스 안에서 바로 readline으로 받기 위해 박스를 닫지 않음)
+function printMenuTop() {
   fillScreen();
   const line = '─'.repeat(WIDTH + 2);
-  const inner = WIDTH - 6; // 바깥 여백 2칸씩 + 안쪽 박스 테두리 2칸
-  const innerLine = '─'.repeat(inner + 2);
   const p = (cardLine) => screenCenter(cardLine, CARD_WIDTH);
 
   if (!TTY) console.log('');
@@ -212,56 +214,41 @@ function printMenu() {
   p(center('AUTO-NEWRROW CLI', `${C.bold}${C.orange}AUTO-NEWRROW${C.reset} ${C.bold}${C.light}CLI${C.reset}`, WIDTH));
   p(row('', '', WIDTH));
 
-  // 안쪽 미니 터미널 프리뷰
-  p(row(`  ┌${innerLine}┐`, `  ${C.dim}┌${innerLine}┐${C.reset}`, WIDTH));
-  {
-    const l1 = innerRow('Type a number... (0 to exit)', `${C.gray}Type a number... (0 to exit)${C.reset}`, inner);
-    p(row(`  ${l1.plain}`, `  ${l1.colored}`, WIDTH));
-  }
-  {
-    const left = `1. ${MENU[0].label}`;
-    const right = 'Gemini · Playwright';
-    const gap = Math.max(inner - vwidth(left) - vwidth(right), 1);
-    const plainInner = `${left}${' '.repeat(gap)}${right}`;
-    const coloredInner = `${C.green}${left}${C.reset}${' '.repeat(gap)}${C.dim}${right}${C.reset}`;
-    const l2 = innerRow(plainInner, coloredInner, inner);
-    p(row(`  ${l2.plain}`, `  ${l2.colored}`, WIDTH));
-  }
-  p(row(`  └${innerLine}┘`, `  ${C.dim}└${innerLine}┘${C.reset}`, WIDTH));
-  p(row('', '', WIDTH));
-
-  // 축약 단축키 줄
-  const shortLabels = ['1 회고', '2 초기화', '3 할일', '...', '0 종료'];
-  const shortPlain = shortLabels.join('   ');
-  const shortColored = shortLabels.map(s => {
-    const [num, ...rest] = s.split(' ');
-    return /^\d$/.test(num) ? `${C.gray}${num}${C.reset} ${C.light}${rest.join(' ')}${C.reset}` : `${C.dim}${s}${C.reset}`;
-  }).join('   ');
-  p(center(shortPlain, shortColored, WIDTH));
-  p(row('', '', WIDTH));
-
-  p(`${C.dim}├${line}┤${C.reset}`);
-  const tip = '● 터미널 한 줄이면 오늘 회고 끝';
-  p(row(tip, `${C.orange}●${C.reset} ${C.dim}터미널 한 줄이면 오늘 회고 끝${C.reset}`, WIDTH));
-  p(`${C.dim}└${line}┘${C.reset}`);
-
-  screenCenter('', 0);
   MENU.forEach((m, i) => {
     const color = i === 0 ? C.green : C.light;
-    const plain = `${i + 1}. ${m.label}`;
-    screenCenter(`${C.gray}${i + 1}.${C.reset} ${color}${m.label}${C.reset}`, vwidth(plain));
+    p(row(`  ${i + 1}. ${m.label}`, `  ${C.gray}${i + 1}.${C.reset} ${color}${m.label}${C.reset}`, WIDTH));
   });
-  screenCenter(`${C.gray}0.${C.reset} ${C.light}종료${C.reset}`, vwidth('0. 종료'));
-  screenCenter('', 0);
+  p(row(`  0. 종료`, `  ${C.gray}0.${C.reset} ${C.light}종료${C.reset}`, WIDTH));
+  p(row('', '', WIDTH));
+
+  const innerLine = '─'.repeat(INNER_WIDTH + 2);
+  p(row(`  ┌${innerLine}┐`, `  ${C.dim}┌${innerLine}┐${C.reset}`, WIDTH));
+
+  const term = process.stdout.columns || 80;
+  const leftMargin = Math.max(Math.floor((term - CARD_WIDTH) / 2), 0);
+  const boxPrefix = `${BG}${' '.repeat(leftMargin)}${C.dim}│${C.reset}   ${C.dim}│${C.reset} `;
+  if (TTY) process.stdout.write(boxPrefix);
+}
+
+// 입력 박스를 닫고 하단(팁) 그림
+function printMenuBottom() {
+  const line = '─'.repeat(WIDTH + 2);
+  const innerLine = '─'.repeat(INNER_WIDTH + 2);
+  const p = (cardLine) => screenCenter(cardLine, CARD_WIDTH);
+
+  p(row(`  └${innerLine}┘`, `  ${C.dim}└${innerLine}┘${C.reset}`, WIDTH));
+  p(row('', '', WIDTH));
+  p(`${C.dim}├${line}┤${C.reset}`);
+  const tip = '● 뉴로우 회고 자동화 · Gemini';
+  p(row(tip, `${C.orange}●${C.reset} ${C.dim}뉴로우 회고 자동화 · Gemini${C.reset}`, WIDTH));
+  p(`${C.dim}└${line}┘${C.reset}`);
 }
 
 async function main() {
   while (true) {
-    printMenu();
-    const term = process.stdout.columns || 80;
-    const margin = Math.max(Math.floor((term - 20) / 2), 0);
-    if (TTY) process.stdout.write(`${BG}${' '.repeat(margin)}`);
-    const choice = (await ask(`${C.light}선택: ${C.reset}`)).trim();
+    printMenuTop();
+    const choice = (await ask(`${C.gray}번호 입력 (0=종료):${C.reset} `)).trim();
+    printMenuBottom();
     if (choice === '0') break;
     const item = MENU[Number(choice) - 1];
     if (!item) { console.log('잘못된 입력'); continue; }
