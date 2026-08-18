@@ -155,6 +155,17 @@ function vwidth(s) {
   }
   return w;
 }
+// 한글은 2칸이라 글자수 기준으로 자르면 카드 폭을 넘어 화면이 깨질 수 있음 — 화면폭 기준으로 자름
+function truncateToWidth(s, maxWidth) {
+  let w = 0, out = '';
+  for (const ch of s) {
+    const cw = vwidth(ch);
+    if (w + cw > maxWidth) return out + '...';
+    w += cw;
+    out += ch;
+  }
+  return out;
+}
 function row(plainText, coloredText, width, pad = ' ') {
   return `${C.dim}│${C.reset} ${coloredText}${pad.repeat(Math.max(width - vwidth(plainText), 0))} ${C.dim}│${C.reset}`;
 }
@@ -335,7 +346,7 @@ function textLine(label, value, color = C.light) {
   return contentRow(`${label}: ${value}`, `${C.gray}${label}:${C.reset} ${color}${value}${C.reset}`);
 }
 function errorLines(err) {
-  const msg = (err?.message ?? String(err)).slice(0, 200);
+  const msg = truncateToWidth(err?.message ?? String(err), INNER_WIDTH);
   return [contentRow('오류', `${C.red}❌ 오류${C.reset}`), blankContentRow(), contentRow(msg, `${C.light}${msg}${C.reset}`)];
 }
 
@@ -395,7 +406,7 @@ async function doReflect() {
   const renderLog = () => log.map(l => contentRow(l, `${C.light}${l}${C.reset}`));
 
   pushLog(`📌 ${topic}`);
-  pushLog(`📝 (${text.length}자) ${text.slice(0, 60)}${text.length > 60 ? '...' : ''}`);
+  pushLog(`📝 (${text.length}자) ${truncateToWidth(text, 28)}`);
   drawCard(renderLog(), '자동화 진행 중...');
 
   let result;
@@ -403,14 +414,14 @@ async function doReflect() {
     try {
       result = await submitReflection(
         text, EMAIL, PASSWORD, topic, date,
-        async (step) => { pushLog(`▸ ${step}`); updateContent(renderLog()); },
-        async (msg) => { pushLog(`⚠ ${msg}`); updateContent(renderLog()); },
+        async (step) => { pushLog(truncateToWidth(`▸ ${step}`, INNER_WIDTH)); updateContent(renderLog()); },
+        async (msg) => { pushLog(truncateToWidth(`⚠ ${msg}`, INNER_WIDTH)); updateContent(renderLog()); },
         undefined, true, // silent=true — automation.js 내부 진단 로그가 카드 밖으로 새는 것 방지
       );
       break;
     } catch (err) {
       if (attempt === 2) throw err;
-      pushLog(`⚠ 1차 시도 실패 — 재시도: ${err.message.slice(0, 40)}`);
+      pushLog(truncateToWidth(`⚠ 1차 시도 실패 — 재시도: ${err.message}`, INNER_WIDTH));
       updateContent(renderLog());
       await new Promise(r => setTimeout(r, 3000));
     }
