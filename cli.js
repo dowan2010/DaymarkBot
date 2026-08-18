@@ -8,6 +8,15 @@ import { dirname, join } from 'path';
 import { config as loadEnv } from 'dotenv';
 import { createInterface } from 'readline/promises';
 import { emitKeypressEvents } from 'readline';
+import { execFile } from 'child_process';
+
+// 터미널 벨 + (macOS면) 시스템 알림
+function notify(message) {
+  process.stdout.write('\x07');
+  if (process.platform === 'darwin') {
+    execFile('osascript', ['-e', `display notification "${message.replace(/"/g, '\\"')}" with title "auto-newrrow"`], () => {});
+  }
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = join(__dirname, '.env');
@@ -469,6 +478,7 @@ async function doTopics() {
     30_000,
   );
   const topics = result.response.text().trim().split('\n').filter(Boolean);
+  notify('주제 추천 완료');
   await cardWait(topics.map((t, i) => contentRow(`${i + 1}. ${t}`, `${C.light}${i + 1}. ${t}${C.reset}`)));
 }
 
