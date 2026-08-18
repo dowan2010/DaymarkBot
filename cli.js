@@ -145,13 +145,50 @@ const MENU = [
   { label: '설정 (API 키 / 계정)', run: doSettings },
 ];
 
+// ── 터미널 UI (ANSI 컬러 + 박스) ──
+const TTY = process.stdout.isTTY;
+const C = TTY ? {
+  reset: '\x1b[0m', bold: '\x1b[1m',
+  orange: '\x1b[38;5;209m', green: '\x1b[38;5;114m',
+  gray: '\x1b[38;5;242m', dim: '\x1b[38;5;238m', light: '\x1b[38;5;253m',
+} : { reset: '', bold: '', orange: '', green: '', gray: '', dim: '', light: '' };
+
+function vwidth(s) {
+  let w = 0;
+  for (const ch of s) {
+    const cp = ch.codePointAt(0);
+    w += (cp >= 0xAC00 && cp <= 0xD7A3) || (cp >= 0x3130 && cp <= 0x318F) ? 2 : 1;
+  }
+  return w;
+}
+function row(plainText, coloredText, width) {
+  return `${C.dim}│${C.reset} ${coloredText}${' '.repeat(Math.max(width - vwidth(plainText), 0))} ${C.dim}│${C.reset}`;
+}
+
+function printMenu() {
+  const WIDTH = 40;
+  const line = '─'.repeat(WIDTH + 2);
+  console.log(`${C.dim}┌${line}┐${C.reset}`);
+  console.log(row('AUTO-NEWRROW', `${C.bold}${C.orange}AUTO-NEWRROW${C.reset}`, WIDTH));
+  console.log(`${C.dim}├${line}┤${C.reset}`);
+  MENU.forEach((m, i) => {
+    const color = i === 0 ? C.green : C.light;
+    const plain = `${i + 1}. ${m.label}`;
+    console.log(row(plain, `${C.gray}${i + 1}.${C.reset} ${color}${m.label}${C.reset}`, WIDTH));
+  });
+  console.log(row('0. 종료', `${C.gray}0.${C.reset} ${C.light}종료${C.reset}`, WIDTH));
+  console.log(`${C.dim}├${line}┤${C.reset}`);
+  const tip = '● 뉴로우 회고 자동화 · Gemini';
+  console.log(row(tip, `${C.orange}●${C.reset} ${C.dim}뉴로우 회고 자동화 · Gemini${C.reset}`, WIDTH));
+  console.log(`${C.dim}└${line}┘${C.reset}`);
+}
+
 async function main() {
-  console.log('📓 auto-newrrow CLI\n');
+  console.log(`\n${C.bold}${C.orange}📓 auto-newrrow CLI${C.reset}\n`);
   while (true) {
     console.log('');
-    MENU.forEach((m, i) => console.log(`${i + 1}. ${m.label}`));
-    console.log('0. 종료');
-    const choice = (await ask('\n선택: ')).trim();
+    printMenu();
+    const choice = (await ask(`\n${C.light}선택: ${C.reset}`)).trim();
     if (choice === '0') break;
     const item = MENU[Number(choice) - 1];
     if (!item) { console.log('잘못된 입력'); continue; }
