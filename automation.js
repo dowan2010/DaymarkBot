@@ -231,7 +231,7 @@ export async function dismissLoginPopup(page, silent = false) {
   }
 }
 
-export async function login(page, email, password, silent = false) {
+export async function login(page, email, password, silent = false, onDebug = async () => {}) {
   const log = silent ? () => {} : console.log.bind(console);
   log('로그인 중... 현재 URL:', page.url());
 
@@ -259,13 +259,36 @@ export async function login(page, email, password, silent = false) {
   // fill()은 React controlled input에 직접 값 주입 (keystroke 없음, 즉각)
   await emailInput.fill(email);
   await pwInput.fill(password);
+
+  // 클릭 직전 실제 상태 확인 (값이 제대로 들어갔는지, 버튼이 비활성 상태는 아닌지)
+  const preClickState = await frame.evaluate(() => {
+    const e = document.getElementById('accountId');
+    const p = document.getElementById('accountPassword');
+    const b = document.getElementById('loginSubmit');
+    return {
+      emailLen: e?.value?.length ?? null,
+      pwLen: p?.value?.length ?? null,
+      btnDisabled: b?.disabled ?? null,
+      btnVisible: b ? b.offsetParent !== null : null,
+    };
+  }).catch(() => null);
+  log('[login] 클릭 직전 상태:', JSON.stringify(preClickState));
+  await onDebug(`클릭 직전: email=${preClickState?.emailLen} pw=${preClickState?.pwLen} disabled=${preClickState?.btnDisabled} visible=${preClickState?.btnVisible}`);
+
   // 제출 버튼 셀렉터가 사이트 변경 등으로 안 맞을 경우 대비 — 버튼 클릭 실패해도
   // 비밀번호 입력창에서 Enter로 폼 제출 시도
   const clicked = await submitBtn.click({ timeout: 5000 }).then(() => true).catch(() => false);
+  log('[login] 버튼 클릭 성공 여부:', clicked);
   if (!clicked) {
     log('[login] 제출 버튼 클릭 실패 — Enter로 재시도');
+    await onDebug('버튼 클릭 실패 — Enter로 재시도');
     await pwInput.press('Enter').catch(() => {});
   }
+
+  // 클릭 직후 URL이 실제로 바뀌기 시작했는지 짧게 확인 (제자리인지 진행 중인지)
+  await page.waitForTimeout(300);
+  log('[login] 클릭 직후 URL:', page.url());
+  await onDebug(`클릭 직후 URL: ${new URL(page.url()).host}`);
   log('[login] 로그인 폼 제출 완료');
 
   // URL 폴링으로 로그인 결과 확인 (최대 60초)
@@ -635,7 +658,7 @@ export async function submitReflection(text, email, password, topic = '오늘의
       if (curUrl.includes('/csr-platform/')) break;
       if (curUrl.includes('inhrplus.com') || curUrl.includes('/login')) {
         await onProgress('로그인 중...');
-        await login(page, email, password, silent);
+        await login(page, email, password, silent, onWarning);
         await page.goto(reflectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 15000 }).catch(() => {});
         // 로그인 직후 세션 토큰이 아직 기록 전이면 재이동 시 로그인 페이지로 다시 튕길 수 있음 — 재시도
@@ -664,7 +687,7 @@ export async function submitReflection(text, email, password, topic = '오늘의
     }
     if (!settled) {
       await onProgress(`로그인 중... (${new URL(page.url()).host})`);
-      await login(page, email, password, silent);
+      await login(page, email, password, silent, onWarning);
       await page.goto(reflectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 15000 }).catch(() => {});
       if (!page.url().includes('/csr-platform/')) {
@@ -687,7 +710,7 @@ export async function submitReflection(text, email, password, topic = '오늘의
     if (sawLoginTitle) {
       for (let attempt = 0; attempt < 3; attempt++) {
         await onWarning(`로그인 페이지 감지됨 — 재로그인 (${attempt + 1}/3)`);
-        await login(page, email, password, silent);
+        await login(page, email, password, silent, onWarning);
         await page.goto(reflectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForURL(url => url.includes('/csr-platform/'), { timeout: 15000 }).catch(() => {});
         await dismissLoginPopup(page, silent);
